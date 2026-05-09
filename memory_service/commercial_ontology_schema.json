@@ -1,0 +1,25 @@
+{
+    "nodes": [
+        "User",
+        "Fact",
+        "Entity"
+    ],
+    "predicates": [
+        "HAS_MEETING_WITH",
+        "FAVORITE_COLOR",
+        "WORKS_AT",
+        "LIKES",
+        "KNOWS"
+    ],
+    "properties": {
+        "Fact": [
+            "subject",
+            "predicate",
+            "object",
+            "timestamp",
+            "source_channel",
+            "status",
+            "embedding"
+        ]
+    }
+}
