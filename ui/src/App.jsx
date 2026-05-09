@@ -28,6 +28,7 @@ import OntologyAssistant from './components/OntologyAssistant';
 import AgentChat from './components/AgentChat';
 import AgentBuilder from './components/AgentBuilder';
 import AdminChat from './components/AdminChat';
+import InventoryExplorer from './components/InventoryExplorer';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -41,7 +42,7 @@ function App() {
   const [agentId, setAgentId] = useState('global');
   const [leftTab, setLeftTab] = useState('assistant'); // 'assistant' or 'chat'
   const [refreshGraph, setRefreshGraph] = useState(0);
-  const [viewMode, setViewMode] = useState('memory'); // 'memory' or 'schema'
+  const [viewMode, setViewMode] = useState('memory'); // 'memory', 'schema', or 'inventory'
 
   // Dynamic config states
   const [agentsList, setAgentsList] = useState(['global']);
@@ -307,6 +308,12 @@ function App() {
               >
                 Ontology Schema
               </button>
+              <button 
+                onClick={() => setViewMode('inventory')}
+                style={{ padding: '4px 12px', fontSize: '0.85rem', borderRadius: '4px', background: viewMode === 'inventory' ? 'rgba(236, 72, 153, 0.5)' : 'transparent', color: viewMode === 'inventory' ? 'white' : '#9ca3af', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                Operational Inventory
+              </button>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -339,13 +346,22 @@ function App() {
 
       <div className="workspace">
         <main className="main-canvas">
-          <GraphExplorer 
-            agentId={agentId} 
-            refreshTrigger={refreshGraph} 
-            viewMode={viewMode}
-            schema={schema}
-            isSidebarOpen={isSidebarOpen}
-          />
+          {viewMode === 'inventory' ? (
+            <InventoryExplorer 
+              agentId={agentId} 
+              schema={schema} 
+              isSidebarOpen={isSidebarOpen} 
+              refreshTrigger={refreshGraph} 
+            />
+          ) : (
+            <GraphExplorer 
+              agentId={agentId} 
+              refreshTrigger={refreshGraph} 
+              viewMode={viewMode}
+              schema={schema}
+              isSidebarOpen={isSidebarOpen}
+            />
+          )}
           
           <button 
             className={`sidebar-toggle ${!isAssistantOpen ? 'collapsed-toggle' : ''}`}

@@ -18,6 +18,7 @@ const AgentBuilder = ({ onClose, onSave }) => {
   const [name, setName] = useState('');
   const [instruction, setInstruction] = useState('');
   const [selectedTools, setSelectedTools] = useState([]);
+  const [actionTemplates, setActionTemplates] = useState([]);
   const [ontology, setOntology] = useState('');
   
   // Conversational State
@@ -54,6 +55,7 @@ const AgentBuilder = ({ onClose, onSave }) => {
         name,
         instruction,
         tools: selectedTools,
+        action_templates: actionTemplates,
         ontology: ontology ? JSON.parse(ontology) : null
       };
 
@@ -79,6 +81,7 @@ const AgentBuilder = ({ onClose, onSave }) => {
         setName(data.config.name || '');
         setInstruction(data.config.instruction || '');
         setSelectedTools(data.config.tools || []);
+        setActionTemplates(data.config.action_templates || []);
         if (data.config.ontology) {
           setOntology(JSON.stringify(data.config.ontology, null, 2));
         } else {
@@ -127,6 +130,7 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
         setName(data.config.name || '');
         setInstruction(data.config.instruction || '');
         setSelectedTools(data.config.tools || []);
+        setActionTemplates(data.config.action_templates || []);
         if (data.config.ontology) {
           setOntology(JSON.stringify(data.config.ontology, null, 2));
         } else {
@@ -174,6 +178,7 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
           name: name,
           instruction: instruction,
           tools: selectedTools,
+          action_templates: actionTemplates,
           ontology: parsedOntology
         })
       });
@@ -466,6 +471,23 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
                 {availableTools.length === 0 && <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>No tools available or loading...</span>}
               </div>
             </div>
+
+            {actionTemplates && actionTemplates.length > 0 && (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: '#9ca3af', marginBottom: '0.5rem' }}>Dynamic Operational Tools (Action Templates)</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {actionTemplates.map((template, idx) => (
+                    <div key={idx} style={{ padding: '0.75rem', backgroundColor: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '0.375rem' }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.875rem', color: '#93c5fd', marginBottom: '0.25rem' }}>{template.tool_name}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#d1d5db', marginBottom: '0.5rem' }}>{template.description}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#6b7280', fontFamily: 'monospace', whiteSpace: 'pre-wrap', backgroundColor: 'rgba(0,0,0,0.2)', padding: '0.5rem', borderRadius: '0.25rem' }}>
+                        {template.query}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: '#9ca3af', marginBottom: '0.25rem' }}>Ontology Schema (JSON)</label>

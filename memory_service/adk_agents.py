@@ -139,98 +139,68 @@ def search_knowledge_graph(agent_id: str, query: str):
     except Exception as e:
         return f"Error querying knowledge graph: {e}"
 
-def create_ticket(agent_id: str, title: str, description: str, user_id: str = "anonymous", priority: str = "normal"):
-    """
-    Creates a new support ticket in the dynamic operational inventory.
-    Use this tool when a user wants to open a support ticket or report an issue.
-    
-    Args:
-        agent_id: The ID of the agent (e.g. "support").
-        title: Short summary of the issue.
-        description: Detailed description of the issue.
-        user_id: The ID or name of the user opening the ticket.
-        priority: Priority of the ticket (e.g. "low", "normal", "high").
-    """
-    print(f"[Tool] create_ticket called with: {agent_id}, {title}")
-    client = get_schema_client(agent_id)
-    ticket_id = f"ticket_{uuid.uuid4().hex[:8]}"
-    
-    properties = {
-        "id": ticket_id,
-        "title": title,
-        "description": description,
-        "status": "open",
-        "priority": priority,
-        "created_at": time.time(),
-        "user_id": user_id
-    }
-    
-    client.upsert_node(
-        node_id=ticket_id,
-        label="Ticket",
-        properties=properties
-    )
-    
-    # Link user to ticket
-    safe_user_id = user_id.replace(" ", "_").lower()
-    client.upsert_node(node_id=safe_user_id, label="User", properties={"name": user_id})
-    client.create_edge(source_id=safe_user_id, target_id=ticket_id, relation="OPENED_TICKET")
-    
-    return f"Ticket created successfully with ID: {ticket_id}"
+import uuid
+import time
+import inspect
 
-def query_tickets(agent_id: str, status: str = None, user_id: str = None):
-    """
-    Query the dynamic inventory for support tickets based on status or user_id.
+def make_dynamic_tool(action_def: dict):
+    tool_name = action_def["tool_name"]
+    description = action_def.get("description", "")
+    parameters = action_def.get("parameters", {})
+    cypher_query = action_def["cypher_query"]
+    success_message = action_def.get("success_message", "Success")
+
+    args_str = ", ".join([f"{k}: str" for k in parameters.keys()])
+    if "agent_id" not in parameters:
+        if args_str:
+            args_str = "agent_id: str, " + args_str
+        else:
+            args_str = "agent_id: str"
+
+    params_str = ", ".join([f"'{k}': {k}" for k in parameters.keys()])
     
-    Args:
-        agent_id: The ID of the agent.
-        status: (Optional) The status to filter by (e.g., 'open', 'closed').
-        user_id: (Optional) The user ID to filter by.
-    """
-    print(f"[Tool] query_tickets called with: {agent_id}, status={status}, user={user_id}")
+    func_code = f"""
+def {tool_name}({args_str}):
+    '''
+    {description}
+    '''
+    from graph_client import get_schema_client
+    import uuid
+    import time
+    print(f"[Dynamic Tool] {tool_name} called with agent_id={{agent_id}}")
     client = get_schema_client(agent_id)
     
-    conditions = []
-    params = {}
+    query_params = {{{params_str}}}
     
-    if status:
-        conditions.append("t.status = $status")
-        params['status'] = status
-    if user_id:
-        conditions.append("t.user_id = $user_id")
-        params['user_id'] = user_id
-        
-    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
-    
-    q = f"""
-    MATCH (t:Ticket)
-    {where_clause}
-    RETURN t.id, t.title, t.status, t.priority, t.user_id
-    LIMIT 20
-    """
+    # Inject automatic variables that can be used in cypher
+    query_params['__id'] = uuid.uuid4().hex[:8]
+    query_params['__timestamp'] = time.time()
     
     try:
-        res = client.graph.query(q, params)
-        tickets = []
-        for record in res.result_set:
-            tickets.append(f"Ticket ID: {record[0]} | Title: {record[1]} | Status: {record[2]} | Priority: {record[3]} | User: {record[4]}")
-            
-        if not tickets:
-            return "No tickets found matching the criteria."
-        return "\\n".join(tickets)
+        res = client.graph.query({repr(cypher_query)}, query_params)
+        
+        results = []
+        if res.result_set:
+            for record in res.result_set:
+                results.append(" | ".join([str(val) for val in record]))
+        if results:
+            return {repr(success_message)} + "\\nResults:\\n" + "\\n".join(results)
+        return {repr(success_message)}
     except Exception as e:
-        return f"Error querying tickets: {e}"
+        return f"Error executing {tool_name}: {{e}}"
+"""
+    namespace = {}
+    exec(func_code, globals(), namespace)
+    return namespace[tool_name]
 
 import os
 
-# Define available tools map
+# Define available tools map (base tools)
 AVAILABLE_TOOLS = {
     "save_memory_to_graph": save_memory_to_graph,
     "update_node_properties": update_node_properties,
     "search_raw_history": search_raw_history,
-    "search_knowledge_graph": search_knowledge_graph,
-    "create_ticket": create_ticket,
-    "query_tickets": query_tickets
+    "search_knowledge_graph": search_knowledge_graph
 }
 
 agents_config_path = os.path.join(os.path.dirname(__file__), "agents_config.json")
@@ -285,14 +255,23 @@ def get_all_agents() -> list:
     config = load_agents_config()
     return list(config.keys())
 
-def create_or_update_agent(agent_id: str, name: str, instruction: str, tools: list) -> Agent:
+def create_or_update_agent(agent_id: str, name: str, instruction: str, tools: list, action_templates: list = None) -> Agent:
     """Create a new agent or update an existing one in the configuration."""
     config = load_agents_config()
-    config[agent_id] = {
+    
+    agent_data = {
         "name": name,
         "instruction": instruction,
         "tools": tools
     }
+    
+    if action_templates is not None:
+        agent_data["action_templates"] = action_templates
+    elif agent_id in config and "action_templates" in config[agent_id]:
+        # Preserve existing action_templates if not explicitly updated
+        agent_data["action_templates"] = config[agent_id]["action_templates"]
+        
+    config[agent_id] = agent_data
     save_agents_config(config)
     
     # Invalidate cached agent if it exists
@@ -331,6 +310,12 @@ def get_agent(agent_id: str, force_reload: bool = False) -> Agent:
     for t_name in agent_info.get("tools", []):
         if t_name in AVAILABLE_TOOLS:
             tools_to_inject.append(AVAILABLE_TOOLS[t_name])
+            
+    # Inject dynamic tools from action_templates
+    action_templates = agent_info.get("action_templates", [])
+    for template in action_templates:
+        dyn_tool = make_dynamic_tool(template)
+        tools_to_inject.append(dyn_tool)
             
     agent = Agent(
         name=f"{agent_id}_agent",

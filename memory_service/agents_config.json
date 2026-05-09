@@ -19,6 +19,30 @@
       "search_knowledge_graph",
       "create_ticket",
       "query_tickets"
+    ],
+    "action_templates": [
+      {
+        "tool_name": "create_ticket",
+        "description": "Creates a new support ticket in the dynamic operational inventory. Use this when a user reports an issue.",
+        "parameters": {
+          "title": "Short summary of the issue.",
+          "description": "Detailed description of the issue.",
+          "user_id": "The ID or name of the user opening the ticket.",
+          "priority": "Priority of the ticket (e.g. 'low', 'normal', 'high')."
+        },
+        "cypher_query": "MERGE (u:User {name: toLower(replace($user_id, ' ', '_'))}) MERGE (t:Ticket {id: 'ticket_' + $__id, title: $title, description: $description, status: 'open', priority: $priority, created_at: $__timestamp, user_id: $user_id}) MERGE (u)-[:OPENED_TICKET]->(t) RETURN t.id",
+        "success_message": "Ticket created successfully."
+      },
+      {
+        "tool_name": "query_tickets",
+        "description": "Query the dynamic inventory for support tickets based on status or user_id.",
+        "parameters": {
+          "status": "(Optional) The status to filter by (e.g., 'open', 'closed'). Pass empty string if no filter.",
+          "user_id": "(Optional) The user ID to filter by. Pass empty string if no filter."
+        },
+        "cypher_query": "MATCH (t:Ticket) WHERE ($status = '' OR t.status = $status) AND ($user_id = '' OR t.user_id = $user_id) RETURN t.id, t.title, t.status, t.priority, t.user_id LIMIT 20",
+        "success_message": "Query executed. Please review the returned results."
+      }
     ]
   },
   "sales_assistant_pro": {

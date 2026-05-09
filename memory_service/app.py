@@ -140,6 +140,7 @@ class AgentPayload(BaseModel):
     instruction: str
     tools: list[str]
     ontology: dict | None = None
+    action_templates: list[dict] | None = None
 
 class AgentGeneratePayload(BaseModel):
     description: str
@@ -155,7 +156,13 @@ def list_tools():
 
 @app.post("/agents")
 def save_agent(payload: AgentPayload):
-    create_or_update_agent(payload.agent_id, payload.name, payload.instruction, payload.tools)
+    create_or_update_agent(
+        payload.agent_id, 
+        payload.name, 
+        payload.instruction, 
+        payload.tools,
+        action_templates=payload.action_templates
+    )
     if payload.ontology:
         ontology_manager.save_schema(payload.ontology, payload.agent_id)
     return {"status": "success", "agent_id": payload.agent_id}
@@ -173,13 +180,21 @@ def generate_agent(payload: AgentGeneratePayload):
     prompt = f"""You are an AI assistant helping a user build and refine a new agent for a knowledge graph system.
 The user will describe the agent they want or provide instructions to refine the current setup.{current_context}
 
-Available tools the agent can use: {list(AVAILABLE_TOOLS.keys())}
+Available standard tools the agent can use: {list(AVAILABLE_TOOLS.keys())}
+
+You can also create dynamic tools by defining "action_templates" using Cypher queries to operate on FalkorDB. 
+These action templates empower the agent with custom operational tools without needing backend code changes.
 
 Generate a JSON object with the following fields:
 - "agent_id": A short, lowercase string with underscores (no spaces) to uniquely identify the agent.
 - "name": A human-readable display name for the agent.
 - "instruction": The system prompt/instruction for the agent. This should be comprehensive and tell the agent its mission, its persona, and explicitly tell it when and how to use the available tools to save/update memories in its knowledge graph. The agent MUST be instructed to use the tool with its specific `agent_id`.
-- "tools": An array of tool names from the available tools list that this agent should have access to.
+- "tools": An array of standard tool names from the available standard tools list that this agent should have access to. Do not include dynamic tool names here.
+- "action_templates": An optional array of dynamic tool definitions to empower the agent with specific operations. Each object should have:
+    - "tool_name": A unique string name for the tool.
+    - "description": A clear description for the LLM of what this tool does.
+    - "parameters": A dictionary mapping parameter names to their descriptions (for the LLM). Use `__id` and `__timestamp` in the query to auto-generate unique IDs and current timestamps without needing to require them as parameters from the LLM.
+    - "query": The raw Cypher query to execute on FalkorDB. Parameters must be referenced as `$paramName`. Example: `CREATE (t:Ticket {{id: $__id, title: $title, status: 'open', created_at: $__timestamp}})`
 - "ontology": An initial graph schema tailored for this agent's domain. It must contain:
     - "nodes": an array of class strings (e.g. ["Person", "Company"])
     - "predicates": an array of relation strings (e.g. ["WORKS_AT", "OWNS"])
