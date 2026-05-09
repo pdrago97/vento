@@ -18,7 +18,7 @@ def get_embedding(text: str) -> list[float]:
         return [0.1] * 768 
 
     response = client.models.embed_content(
-        model="text-embedding-004",
+        model="models/gemini-embedding-2",
         contents=text,
         config=types.EmbedContentConfig(
             task_type="RETRIEVAL_DOCUMENT"

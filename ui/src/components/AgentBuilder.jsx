@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Save, X, Bot, Plus } from 'lucide-react';
+import { Sparkles, Save, X, Bot, Plus, UploadCloud } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -11,6 +11,7 @@ const AgentBuilder = ({ onClose, onSave }) => {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [availableTools, setAvailableTools] = useState([]);
+  const [uploading, setUploading] = useState(false);
   
   // Form State
   const [agentId, setAgentId] = useState('');
@@ -183,6 +184,60 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
       setError('Network error occurred while saving.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !agentId) {
+      if (!agentId) setError('Please set an Agent ID first before uploading documents.');
+      return;
+    }
+    
+    setUploading(true);
+    setError('');
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const response = await fetch(`${API_BASE}/agent/${agentId}/ingest_document`, {
+        method: 'POST',
+        body: formData
+      });
+      
+      const data = await response.json();
+      if (data.status === 'success') {
+        setChatHistory(prev => [...prev, {
+          role: 'assistant',
+          content: `Document ${data.filename} processed successfully! Extracted ${data.extracted_facts?.length || 0} facts.`
+        }]);
+        
+        // Merge suggested ontology
+        if (data.suggested_updates && (data.suggested_updates.nodes?.length > 0 || data.suggested_updates.predicates?.length > 0)) {
+          try {
+            const currOnt = ontology ? JSON.parse(ontology) : { nodes: [], predicates: [], properties: {} };
+            const newNodes = [...new Set([...(currOnt.nodes || []), ...(data.suggested_updates.nodes || [])])];
+            const newPredicates = [...new Set([...(currOnt.predicates || []), ...(data.suggested_updates.predicates || [])])];
+            
+            const newProps = { ...currOnt.properties };
+            for (const [node, props] of Object.entries(data.suggested_updates.properties || {})) {
+              newProps[node] = [...new Set([...(newProps[node] || []), ...props])];
+            }
+            
+            setOntology(JSON.stringify({ nodes: newNodes, predicates: newPredicates, properties: newProps }, null, 2));
+          } catch (e) {
+            console.error("Failed to parse ontology to merge suggestions.");
+          }
+        }
+      } else {
+        setError(data.message || 'Failed to process document.');
+      }
+    } catch (err) {
+      setError('Network error occurred during document upload.');
+    } finally {
+      setUploading(false);
+      e.target.value = null; // reset input
     }
   };
 
@@ -415,6 +470,45 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
                 placeholder='{"nodes": [], "predicates": [], "properties": {}}'
               />
             </div>
+
+            {/* Document Ingestion Area */}
+            <div style={{ marginTop: '0.5rem', padding: '1rem', border: '1px dashed rgba(147, 197, 253, 0.3)', borderRadius: '0.5rem', backgroundColor: 'rgba(59, 130, 246, 0.05)' }}>
+              <h4 style={{ fontSize: '0.875rem', fontWeight: 500, color: '#93c5fd', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <UploadCloud size={16} /> Knowledge Ingestion
+              </h4>
+              <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: '0.75rem' }}>
+                Upload documents (PDF, MD, DOCX, Spreadsheets) to automatically update this agent's knowledge graph and ontology. Ensure Agent ID is set first.
+              </p>
+              
+              <input 
+                type="file" 
+                id="docUpload"
+                style={{ display: 'none' }}
+                accept=".pdf,.md,.txt,.docx,.doc,.csv,.xls,.xlsx,.png,.jpg,.jpeg,.mp3,.wav,.mp4,.mov,.webm"
+                onChange={handleFileUpload}
+                disabled={uploading || !agentId}
+              />
+              <label 
+                htmlFor="docUpload"
+                className="add-btn"
+                style={{ 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem', 
+                  padding: '0.5rem 1rem', 
+                  fontSize: '0.75rem', 
+                  cursor: (uploading || !agentId) ? 'not-allowed' : 'pointer',
+                  opacity: (uploading || !agentId) ? 0.5 : 1,
+                  border: '1px solid rgba(59, 130, 246, 0.5)',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  borderRadius: '0.25rem'
+                }}
+              >
+                {uploading ? <div style={{ border: '2px solid transparent', borderTopColor: '#93c5fd', borderRadius: '50%', width: '14px', height: '14px', animation: 'spin 1s linear infinite' }}></div> : <UploadCloud size={14} />}
+                {uploading ? 'Processing Document...' : 'Upload Document'}
+              </label>
+            </div>
+            
             
           </div>
         </div>

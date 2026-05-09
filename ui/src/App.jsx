@@ -12,8 +12,14 @@ import {
   Settings2,
   ChevronRight,
   PanelRight,
-  Bot
+  Bot,
+  Upload,
+  FileText,
+  File,
+  Paperclip,
+  Check
 } from 'lucide-react';
+import { useRef } from 'react';
 import './index.css';
 import GraphExplorer from './GraphExplorer';
 import OntologyAssistant from './components/OntologyAssistant';
@@ -44,6 +50,12 @@ function App() {
   const [newPredicate, setNewPredicate] = useState('');
   const [newPropertyNode, setNewPropertyNode] = useState('');
   const [newProperty, setNewProperty] = useState('');
+
+  // Knowledge Ingestion states
+  const [ingestingFile, setIngestingFile] = useState(false);
+  const [suggestedUpdates, setSuggestedUpdates] = useState(null);
+  const [extractedFacts, setExtractedFacts] = useState([]);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     fetchAgentsAndSchemas();
@@ -223,6 +235,49 @@ function App() {
     showNotification('success', 'Suggestion applied! Click Save to confirm.');
   };
 
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIngestingFile(true);
+    setSuggestedUpdates(null);
+    setExtractedFacts([]);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const response = await fetch(`${API_BASE}/agent/${agentId}/ingest_document`, {
+        method: 'POST',
+        body: formData
+      });
+      
+      const data = await response.json();
+      if (data.status === 'success') {
+        showNotification('success', `File processed! Extracted ${data.extracted_facts?.length || 0} facts.`);
+        if (data.suggested_updates && (data.suggested_updates.nodes?.length > 0 || data.suggested_updates.predicates?.length > 0)) {
+          setSuggestedUpdates(data.suggested_updates);
+        }
+        setExtractedFacts(data.extracted_facts || []);
+        // Trigger graph refresh to show facts
+        setRefreshGraph(prev => prev + 1);
+      } else {
+        showNotification('error', data.message || 'Failed to process document.');
+      }
+    } catch (err) {
+      showNotification('error', 'Network error occurred during document upload.');
+    } finally {
+      setIngestingFile(false);
+      e.target.value = null;
+    }
+  };
+
+  const applyIngestionUpdates = () => {
+    if (!suggestedUpdates) return;
+    handleApplySuggestion(suggestedUpdates);
+    setSuggestedUpdates(null);
+  };
+
   if (loading) return <div className="container" style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh'}}><Database className="animate-spin" size={32} /></div>;
 
   return (
@@ -346,6 +401,90 @@ function App() {
            
            <div className="sidebar-content">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            
+            {/* Knowledge Ingestion */}
+            <div className="glass-panel card">
+              <h2 className="section-title">
+                <FileText className="text-orange-400" />
+                Knowledge Ingestion
+              </h2>
+              <div style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: '1rem', lineHeight: '1.4' }}>
+                Upload files (PDF, audio, video, images) to extract facts and suggest ontology branches for the current agent.
+              </div>
+              
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                style={{ display: 'none' }} 
+                onChange={handleFileUpload}
+                accept=".pdf,.docx,.md,.txt,.csv,.xls,.xlsx,.png,.jpg,.jpeg,.mp3,.wav,.mp4,.mov,.webm"
+              />
+              
+              <button 
+                className="add-btn" 
+                style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: '0.5rem', padding: '0.75rem', backgroundColor: 'rgba(255,255,255,0.05)' }}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={ingestingFile}
+              >
+                {ingestingFile ? <Database className="animate-spin" size={18} /> : <Upload size={18} />}
+                {ingestingFile ? 'Processing...' : 'Upload Media / Document'}
+              </button>
+
+              {suggestedUpdates && (
+                <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '0.5rem' }}>
+                  <h3 style={{ fontSize: '0.9rem', margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#60a5fa' }}>
+                    <Bot size={16} /> Ontology Suggestions
+                  </h3>
+                  
+                  {suggestedUpdates.nodes?.length > 0 && (
+                    <div style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                      <strong className="text-blue-300">New Entities:</strong> {suggestedUpdates.nodes.join(', ')}
+                    </div>
+                  )}
+                  {suggestedUpdates.predicates?.length > 0 && (
+                    <div style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                      <strong className="text-purple-300">New Relations:</strong> {suggestedUpdates.predicates.join(', ')}
+                    </div>
+                  )}
+                  {Object.keys(suggestedUpdates.properties || {}).length > 0 && (
+                    <div style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                      <strong className="text-emerald-300">New Properties:</strong>
+                      <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0 }}>
+                        {Object.entries(suggestedUpdates.properties).map(([node, props]) => (
+                          <li key={node}>{node}: {props.join(', ')}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+                    <button 
+                      className="save-btn" 
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.8rem', display: 'flex', justifyContent: 'center', gap: '0.5rem' }}
+                      onClick={applyIngestionUpdates}
+                    >
+                      <Check size={14} /> Merge Branches
+                    </button>
+                    <button 
+                      className="action-btn" 
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.8rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5' }}
+                      onClick={() => setSuggestedUpdates(null)}
+                    >
+                      <X size={14} /> Reject
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {extractedFacts.length > 0 && (
+                <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#9ca3af' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <CheckCircle className="text-emerald-400" size={14} /> 
+                    Extracted {extractedFacts.length} facts into Memory Graph.
+                  </div>
+                </div>
+              )}
+            </div>
             
             {/* RDF Legend */}
             <div className="glass-panel card" style={{ padding: '1rem 1.5rem' }}>

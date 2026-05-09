@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import time
@@ -17,6 +17,7 @@ from graph_client import graph_client, get_schema_client
 from gatekeeper import extract_fact
 from ontology_manager import ontology_manager
 from adk_agents import get_agent
+from document_ingestion import extract_text_from_file, analyze_document_for_ontology, chat_multimodal_ontology
 
 app = FastAPI(title="OpenClaw Memory Service")
 
@@ -246,6 +247,92 @@ User request: {payload.message}
         suggestion = json.loads(text.strip())
         return {"status": "success", "suggestion": suggestion}
     except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+from fastapi import Form
+@app.post("/ontology/chat_multimodal")
+async def chat_multimodal(agent_id: str = Form("global"), message: str = Form(None), file: UploadFile = File(None)):
+    if not client:
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+        
+    schema = ontology_manager.get_schema(agent_id)
+    temp_filepath = None
+    filename = None
+    text = ""
+    
+    try:
+        if file and file.filename:
+            file_bytes = await file.read()
+            filename = file.filename
+            
+            temp_dir = os.path.join(os.path.dirname(__file__), "temp_uploads")
+            os.makedirs(temp_dir, exist_ok=True)
+            temp_filepath = os.path.join(temp_dir, filename)
+            with open(temp_filepath, "wb") as f:
+                f.write(file_bytes)
+                
+            text = extract_text_from_file(filename, file_bytes)
+            
+        result = chat_multimodal_ontology(temp_filepath, filename, text, schema, message or "")
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    finally:
+        if temp_filepath and os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+
+@app.post("/agent/{agent_id}/ingest_document")
+async def ingest_document(agent_id: str, file: UploadFile = File(...)):
+    if not client:
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+        
+    try:
+        file_bytes = await file.read()
+        
+        # Save to temp file for Gemini API
+        temp_dir = os.path.join(os.path.dirname(__file__), "temp_uploads")
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_filepath = os.path.join(temp_dir, file.filename)
+        with open(temp_filepath, "wb") as f:
+            f.write(file_bytes)
+
+        text = extract_text_from_file(file.filename, file_bytes)
+        
+        current_schema = ontology_manager.get_schema(agent_id)
+        
+        try:
+            analysis_result = analyze_document_for_ontology(temp_filepath, file.filename, text, current_schema)
+        finally:
+            if os.path.exists(temp_filepath):
+                os.remove(temp_filepath)
+        
+        suggested_updates = analysis_result.get("suggested_ontology_updates", {})
+        extracted_facts = analysis_result.get("extracted_facts", [])
+        
+        # Optionally, save facts immediately:
+        for fact in extracted_facts:
+            subj = fact.get("subject")
+            pred = fact.get("predicate")
+            obj = fact.get("object")
+            if subj and pred and obj:
+                graph_client.store_fact(
+                    user_id="default",
+                    subject=subj,
+                    predicate=pred,
+                    object_val=obj,
+                    timestamp=time.time(),
+                    source_channel=f"document_{file.filename}"
+                )
+        
+        return {
+            "status": "success",
+            "filename": file.filename,
+            "suggested_updates": suggested_updates,
+            "extracted_facts": extracted_facts
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return {"status": "error", "message": str(e)}
 
 @app.post("/agent/{agent_id}/chat")
