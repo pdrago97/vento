@@ -1,5 +1,9 @@
 venv
 .env
 __pycache__
-.env
-venv
+*.db
+*.bak
+ui/test_*.js
+ui/test.html
+ui/check_logs.js
+ui/restore_graph.js

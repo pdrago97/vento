@@ -18,6 +18,7 @@ from gatekeeper import extract_fact
 from ontology_manager import ontology_manager
 from adk_agents import get_agent
 from document_ingestion import extract_text_from_file, analyze_document_for_ontology, chat_multimodal_ontology
+from history_db import log_interaction, search_history
 
 app = FastAPI(title="OpenClaw Memory Service")
 
@@ -272,8 +273,17 @@ async def chat_multimodal(agent_id: str = Form("global"), message: str = Form(No
                 f.write(file_bytes)
                 
             text = extract_text_from_file(filename, file_bytes)
+            # Log document
+            log_interaction(agent_id, "multimodal_session", "user", "document", text, file_path=filename)
+            
+        if message:
+            log_interaction(agent_id, "multimodal_session", "user", "message", message)
             
         result = chat_multimodal_ontology(temp_filepath, filename, text, schema, message or "")
+        
+        # Log assistant suggestion
+        log_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
+        
         return {"status": "success", "result": result}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -298,6 +308,9 @@ async def ingest_document(agent_id: str, file: UploadFile = File(...)):
 
         text = extract_text_from_file(file.filename, file_bytes)
         
+        # Log the full document for needle-in-the-haystack search
+        log_interaction(agent_id, "ingestion_session", "user", "document", text, file_path=file.filename)
+
         current_schema = ontology_manager.get_schema(agent_id)
         
         try:
@@ -359,6 +372,9 @@ async def chat_agent(agent_id: str, payload: ChatPayload):
         if not session:
             await global_session_service.create_session(app_name="vento", user_id="default", session_id=session_id)
             
+        # Log inbound message
+        log_interaction(agent_id, session_id, "user", "message", payload.message)
+        
         msg = types.Content(role="user", parts=[types.Part.from_text(text=payload.message)])
         
         full_response = ""
@@ -376,6 +392,74 @@ async def chat_agent(agent_id: str, payload: ChatPayload):
                 
         if not full_response:
             full_response = "Agent did not return a text response."
+            
+        # Log outbound message
+        log_interaction(agent_id, session_id, "assistant", "message", full_response)
+            
+        return {"status": "success", "response": full_response}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+class SearchPayload(BaseModel):
+    query: str
+    limit: int = 50
+
+@app.post("/agent/{agent_id}/history/search")
+def search_agent_history(agent_id: str, payload: SearchPayload):
+    results = search_history(agent_id, payload.query, payload.limit)
+    return {"status": "success", "results": results}
+
+@app.post("/agent/{agent_id}/admin_chat")
+async def admin_chat_agent(agent_id: str, payload: ChatPayload):
+    if not os.environ.get("GEMINI_API_KEY"):
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+    
+    try:
+        from google.adk import Runner
+        from google.adk.sessions import InMemorySessionService
+        from google.adk.agents.llm_agent import Agent
+        from google.genai import types
+        
+        from adk_agents import AVAILABLE_TOOLS
+        tools_to_inject = [AVAILABLE_TOOLS["search_raw_history"], AVAILABLE_TOOLS["search_knowledge_graph"]]
+
+        admin_agent = Agent(
+            name=f"admin_for_{agent_id}",
+            model="gemini-2.0-flash",
+            instruction=f"You are an Admin, Auditor, and Data Analyst for the '{agent_id}' agent. Your mission is to sweep across the available memory instances, audit operations, retrieve insights, and generate report components based on the available memories. Use 'search_raw_history' and 'search_knowledge_graph' to query the data. Do NOT save new memories. The agent_id you must use for the tools is '{agent_id}'. Answer the user's administrative and analytical queries thoroughly.",
+            tools=tools_to_inject
+        )
+
+        global_session_service = getattr(app.state, "session_service", None)
+        if not global_session_service:
+            global_session_service = InMemorySessionService()
+            app.state.session_service = global_session_service
+            
+        runner = Runner(agent=admin_agent, app_name="vento", session_service=global_session_service)
+        
+        session_id = f"session_admin_{agent_id}"
+        session = await global_session_service.get_session(app_name="vento", user_id="default", session_id=session_id)
+        if not session:
+            await global_session_service.create_session(app_name="vento", user_id="default", session_id=session_id)
+            
+        msg = types.Content(role="user", parts=[types.Part.from_text(text=payload.message)])
+        
+        full_response = ""
+        async for event in runner.run_async(user_id="default", session_id=session_id, new_message=msg):
+            if hasattr(event, "message") and event.message is not None:
+                if hasattr(event.message, "parts"):
+                    for part in event.message.parts:
+                        if part.text:
+                            full_response += part.text
+                elif hasattr(event.message, "text") and event.message.text:
+                    full_response += event.message.text
+            elif hasattr(event, "text") and event.text:
+                full_response += event.text
+                
+        if not full_response:
+            full_response = "Admin Agent did not return a text response."
             
         return {"status": "success", "response": full_response}
     except Exception as e:

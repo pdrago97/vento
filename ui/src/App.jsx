@@ -11,7 +11,9 @@ import {
   X,
   Settings2,
   ChevronRight,
+  ChevronLeft,
   PanelRight,
+  PanelLeft,
   Bot,
   Upload,
   FileText,
@@ -25,6 +27,7 @@ import GraphExplorer from './GraphExplorer';
 import OntologyAssistant from './components/OntologyAssistant';
 import AgentChat from './components/AgentChat';
 import AgentBuilder from './components/AgentBuilder';
+import AdminChat from './components/AdminChat';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -278,8 +281,8 @@ function App() {
     setSuggestedUpdates(null);
   };
 
-  if (loading) return <div className="container" style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh'}}><Database className="animate-spin" size={32} /></div>;
-
+  // We removed the full-screen loading to prevent unmounting the layout,
+  // which causes ForceGraph2D to mount with 0x0 dimensions.
   return (
     <>
       <header className="glass-header">
@@ -321,6 +324,7 @@ function App() {
                 </option>
               ))}
             </select>
+            {loading && <Database className="animate-spin text-blue-400" size={16} />}
             <button 
               onClick={() => setIsBuilderOpen(true)}
               className="add-btn bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40"
@@ -340,45 +344,54 @@ function App() {
             refreshTrigger={refreshGraph} 
             viewMode={viewMode}
             schema={schema}
+            isSidebarOpen={isSidebarOpen}
           />
           
           <button 
             className={`sidebar-toggle ${!isAssistantOpen ? 'collapsed-toggle' : ''}`}
             onClick={() => setIsAssistantOpen(!isAssistantOpen)}
-            style={{ left: isAssistantOpen ? '320px' : '1.5rem', zIndex: 100 }}
+            style={{ left: isAssistantOpen ? '336px' : '1.5rem', zIndex: 100 }}
           >
-            {isAssistantOpen ? <ChevronRight style={{transform: 'rotate(180deg)'}} size={20} /> : <PanelRight style={{transform: 'rotate(180deg)'}} size={20} />}
+            {isAssistantOpen ? <ChevronLeft size={20} /> : <PanelLeft size={20} />}
           </button>
           
           <button 
             className={`sidebar-toggle ${!isSidebarOpen ? 'collapsed-toggle' : ''}`}
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            style={{ right: isSidebarOpen ? '416px' : '1.5rem' }}
+            style={{ right: isSidebarOpen ? '416px' : '1.5rem', zIndex: 100 }}
           >
             {isSidebarOpen ? <ChevronRight size={20} /> : <PanelRight size={20} />}
           </button>
         </main>
         
-        <aside className={`sidebar left-sidebar ${!isAssistantOpen ? 'collapsed' : ''}`} style={{ left: 0, right: 'auto', width: '320px', position: 'absolute', zIndex: 90, height: 'calc(100vh - 64px)', borderRight: '1px solid rgba(255,255,255,0.1)', borderLeft: 'none', display: 'flex', flexDirection: 'column' }}>
+        <aside className={`sidebar left-sidebar ${!isAssistantOpen ? 'collapsed' : ''}`} style={{ width: '320px', zIndex: 90, height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
             <button 
-              style={{ flex: 1, padding: '0.75rem', background: leftTab === 'assistant' ? 'rgba(59, 130, 246, 0.2)' : 'transparent', borderBottom: leftTab === 'assistant' ? '2px solid #3b82f6' : '2px solid transparent', cursor: 'pointer' }}
+              style={{ flex: 1, padding: '0.75rem', background: leftTab === 'assistant' ? 'rgba(59, 130, 246, 0.2)' : 'transparent', borderBottom: leftTab === 'assistant' ? '2px solid #3b82f6' : '2px solid transparent', cursor: 'pointer', fontSize: '0.9rem' }}
               onClick={() => setLeftTab('assistant')}
             >
-              Schema Assistant
+              Schema
             </button>
             <button 
-              style={{ flex: 1, padding: '0.75rem', background: leftTab === 'chat' ? 'rgba(59, 130, 246, 0.2)' : 'transparent', borderBottom: leftTab === 'chat' ? '2px solid #3b82f6' : '2px solid transparent', cursor: 'pointer' }}
+              style={{ flex: 1, padding: '0.75rem', background: leftTab === 'chat' ? 'rgba(59, 130, 246, 0.2)' : 'transparent', borderBottom: leftTab === 'chat' ? '2px solid #3b82f6' : '2px solid transparent', cursor: 'pointer', fontSize: '0.9rem' }}
               onClick={() => setLeftTab('chat')}
             >
-              Agent Chat
+              Agent
+            </button>
+            <button 
+              style={{ flex: 1, padding: '0.75rem', background: leftTab === 'admin' ? 'rgba(16, 185, 129, 0.2)' : 'transparent', borderBottom: leftTab === 'admin' ? '2px solid #10b981' : '2px solid transparent', cursor: 'pointer', fontSize: '0.9rem' }}
+              onClick={() => setLeftTab('admin')}
+            >
+              Admin
             </button>
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
             {leftTab === 'assistant' ? (
               <OntologyAssistant agentId={agentId} currentSchema={schema} onApplySuggestion={handleApplySuggestion} />
-            ) : (
+            ) : leftTab === 'chat' ? (
               <AgentChat agentId={agentId} onUpdate={() => setRefreshGraph(prev => prev + 1)} />
+            ) : (
+              <AdminChat agentId={agentId} />
             )}
           </div>
         </aside>

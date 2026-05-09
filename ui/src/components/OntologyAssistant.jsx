@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, Loader2, Sparkles, Check, X, Paperclip } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Send, Loader2, Sparkles, Check, X, Paperclip } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
 
-export default function OntologyAssistant({ agentId, currentSchema, onApplySuggestion }) {
+export default function OntologyAssistant({ agentId, onApplySuggestion }) {
   const [messages, setMessages] = useState([
     { role: 'assistant', text: `Hi! I'm your Ontology Assistant. I can help you design the knowledge schema for the ${agentId} agent. What would you like to add?` }
   ]);

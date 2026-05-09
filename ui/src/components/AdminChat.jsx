@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, MessageSquare } from 'lucide-react';
+import { Send, Loader2, BarChart } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
 
-export default function AgentChat({ agentId, onUpdate }) {
+export default function AdminChat({ agentId }) {
   const [messages, setMessages] = useState([
-    { role: 'assistant', text: `Hi! I am the ${agentId} Agent. I can chat with you and automatically save relevant memory to my knowledge graph.` }
+    { role: 'assistant', text: `Hi! I am the Admin analyzer for the ${agentId} agent. Ask me to retrieve insights, generate reports, or audit operations based on its memories.` }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,7 +18,7 @@ export default function AgentChat({ agentId, onUpdate }) {
   // Reset chat when agent changes
   useEffect(() => {
     setMessages([
-      { role: 'assistant', text: `Hi! I am the ${agentId} Agent. I can chat with you and automatically save relevant memory to my knowledge graph.` }
+      { role: 'assistant', text: `Hi! I am the Admin analyzer for the ${agentId} agent. Ask me to retrieve insights, generate reports, or audit operations based on its memories.` }
     ]);
   }, [agentId]);
 
@@ -31,7 +31,7 @@ export default function AgentChat({ agentId, onUpdate }) {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}/agent/${agentId}/chat`, {
+      const response = await fetch(`${API_BASE}/agent/${agentId}/admin_chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage })
@@ -48,9 +48,6 @@ export default function AgentChat({ agentId, onUpdate }) {
         text: data.response
       }]);
       
-      // Trigger a graph refresh after the agent replies in case it updated the graph
-      if (onUpdate) onUpdate();
-      
     } catch (err) {
       setMessages(prev => [...prev, { 
         role: 'assistant', 
@@ -65,7 +62,7 @@ export default function AgentChat({ agentId, onUpdate }) {
     <div className="glass-panel card" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '0' }}>
       <div className="sidebar-header" style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
         <h2 style={{ fontSize: '1.1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <MessageSquare className="text-blue-400" size={18} /> Agent Chat
+          <BarChart className="text-emerald-400" size={18} /> Insights & Admin
         </h2>
       </div>
 
@@ -76,10 +73,10 @@ export default function AgentChat({ agentId, onUpdate }) {
             maxWidth: '90%'
           }}>
             <div style={{
-              backgroundColor: msg.role === 'user' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+              backgroundColor: msg.role === 'user' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
               padding: '0.75rem 1rem',
               borderRadius: '0.75rem',
-              border: msg.role === 'user' ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
+              border: msg.role === 'user' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
               fontSize: '0.9rem',
               lineHeight: 1.5
             }}>
@@ -90,7 +87,7 @@ export default function AgentChat({ agentId, onUpdate }) {
         {loading && (
           <div style={{ alignSelf: 'flex-start', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'rgba(255,255,255,0.6)' }}>
             <Loader2 className="animate-spin" size={16} />
-            <span style={{ fontSize: '0.85rem' }}>Agent is thinking...</span>
+            <span style={{ fontSize: '0.85rem' }}>Analyzing memories...</span>
           </div>
         )}
         <div ref={chatEndRef} />
@@ -101,7 +98,7 @@ export default function AgentChat({ agentId, onUpdate }) {
           <input 
             type="text" 
             className="input-field" 
-            placeholder="Talk to the agent..."
+            placeholder="Ask for an operations report..."
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSend()}

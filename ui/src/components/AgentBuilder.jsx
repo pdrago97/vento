@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Sparkles, Save, X, Bot, Plus, UploadCloud } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
@@ -25,10 +25,6 @@ const AgentBuilder = ({ onClose, onSave }) => {
   const [error, setError] = useState('');
   const [chatHistory, setChatHistory] = useState([]);
 
-  useEffect(() => {
-    fetchTools();
-  }, []);
-
   const fetchTools = async () => {
     try {
       const response = await fetch(`${API_BASE}/tools`);
@@ -40,6 +36,11 @@ const AgentBuilder = ({ onClose, onSave }) => {
       console.error("Failed to fetch tools", err);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchTools();
+  }, []);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -87,6 +88,7 @@ const AgentBuilder = ({ onClose, onSave }) => {
         setError(data.message || 'Failed to generate agent configuration.');
       }
     } catch (err) {
+      console.error(err);
       setError('Network error occurred during generation.');
     } finally {
       setGenerating(false);
@@ -135,6 +137,7 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
         setError(data.message || 'Failed to generate skeleton.');
       }
     } catch (err) {
+      console.error(err);
       setError('Network error occurred during generation.');
     } finally {
       setGenerating(false);
@@ -155,6 +158,7 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
         try {
           parsedOntology = JSON.parse(ontology);
         } catch (e) {
+          console.error(e);
           setError('Invalid JSON in Ontology Schema.');
           setLoading(false);
           return;
@@ -181,6 +185,7 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
         setError(data.message || 'Failed to save agent.');
       }
     } catch (err) {
+      console.error(err);
       setError('Network error occurred while saving.');
     } finally {
       setLoading(false);
@@ -227,6 +232,7 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
             
             setOntology(JSON.stringify({ nodes: newNodes, predicates: newPredicates, properties: newProps }, null, 2));
           } catch (e) {
+            console.error(e);
             console.error("Failed to parse ontology to merge suggestions.");
           }
         }
@@ -234,6 +240,7 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
         setError(data.message || 'Failed to process document.');
       }
     } catch (err) {
+      console.error(err);
       setError('Network error occurred during document upload.');
     } finally {
       setUploading(false);

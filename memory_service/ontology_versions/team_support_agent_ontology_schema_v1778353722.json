@@ -2,18 +2,14 @@
     "nodes": [
         "User",
         "Fact",
-        "Entity",
-        "Ticket"
+        "Entity"
     ],
     "predicates": [
         "HAS_MEETING_WITH",
         "FAVORITE_COLOR",
         "WORKS_AT",
         "LIKES",
-        "KNOWS",
-        "OPENED_TICKET",
-        "HAS_TICKET_STATUS",
-        "ASSIGNED_TO"
+        "KNOWS"
     ],
     "properties": {
         "Fact": [
@@ -24,15 +20,6 @@
             "source_channel",
             "status",
             "embedding"
-        ],
-        "Ticket": [
-            "id",
-            "title",
-            "description",
-            "status",
-            "priority",
-            "created_at",
-            "user_id"
         ]
     }
 }

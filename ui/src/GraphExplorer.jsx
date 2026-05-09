@@ -1,20 +1,26 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import ForceGraph3D from 'react-force-graph-3d';
-import SpriteText from 'three-spritetext';
-import { Database, Loader2, Box, Layers, PlusCircle } from 'lucide-react';
+import { Database, Loader2, Layers, PlusCircle, Settings } from 'lucide-react';
 
 import NodeDetailsPanel from './components/NodeDetailsPanel';
 import CreateEdgeModal from './components/CreateEdgeModal';
 
 const API_BASE = 'http://localhost:8000';
 
-function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'memory', schema }) {
+function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'memory', schema, isSidebarOpen }) {
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [mode, setMode] = useState('3D'); // '2D' or '3D'
   const fgRef = useRef();
+
+  // Settings states
+  const [settings, setSettings] = useState({
+    repulsion: -30,
+    linkDistance: 30,
+    centerGravity: 0.1,
+    staticMode: false
+  });
+  const [showSettings, setShowSettings] = useState(false);
 
   // Hover states
   const [hoverNode, setHoverNode] = useState(null);
@@ -25,29 +31,6 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
   const [selectedNode, setSelectedNode] = useState(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [edgeModal, setEdgeModal] = useState(null);
-
-  useEffect(() => {
-    fetchGraphData(refreshTrigger > 0);
-  }, [agentId, refreshTrigger]);
-
-  const fetchGraphData = async (isRefresh = false) => {
-    try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-      const response = await fetch(`${API_BASE}/graph?agent_id=${agentId}`);
-      if (!response.ok) throw new Error('Failed to fetch graph data');
-      const data = await response.json();
-      setGraphData(data);
-    } catch (err) {
-      console.error('Failed to fetch graph data:', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
 
   const displayGraphData = useMemo(() => {
     if (viewMode === 'schema') {
@@ -120,14 +103,113 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
     }
   }, [viewMode, schema, graphData]);
 
+  const fetchGraphData = useCallback(async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      const response = await fetch(`${API_BASE}/graph?agent_id=${agentId}`);
+      if (!response.ok) throw new Error('Failed to fetch graph data');
+      const data = await response.json();
+      setGraphData(data);
+    } catch (err) {
+      console.error('Failed to fetch graph data:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    fetchGraphData(refreshTrigger > 0);
+  }, [fetchGraphData, refreshTrigger]);
+
+  // Apply forces whenever settings change
+  useEffect(() => {
+    // We add an eslint disable here because we purposefully want to access
+    // fgRef.current immediately without putting it in the dependency array
+    // to avoid cyclical render loops when initializing the D3 force engine.
+    /* eslint-disable react-hooks/exhaustive-deps */
+    if (fgRef.current && fgRef.current.d3Force && fgRef.current.d3Force('charge')) {
+      fgRef.current.d3Force('charge').strength(settings.repulsion);
+      fgRef.current.d3Force('link').distance(settings.linkDistance);
+      
+      // Custom center gravity force
+      fgRef.current.d3Force('centerGravity', (alpha) => {
+        if (!displayGraphData || !displayGraphData.nodes) return;
+        const strength = settings.centerGravity * alpha;
+        displayGraphData.nodes.forEach(node => {
+          node.vx -= (node.x || 0) * strength;
+          node.vy -= (node.y || 0) * strength;
+        });
+      });
+
+      if (settings.staticMode) {
+        displayGraphData.nodes.forEach(n => {
+          n.fx = n.x;
+          n.fy = n.y;
+        });
+      } else {
+        displayGraphData.nodes.forEach(n => {
+          n.fx = undefined;
+          n.fy = undefined;
+        });
+      }
+
+      fgRef.current.d3ReheatSimulation();
+    }
+  }, [settings, displayGraphData]);
+
+  const handleCompact = () => {
+    // Move all nodes 90% closer to the origin (0,0) to group disconnected clusters together
+    displayGraphData.nodes.forEach(node => {
+      node.x = (node.x || Math.random()) * 0.1;
+      node.y = (node.y || Math.random()) * 0.1;
+      
+      // Stop their current momentum
+      node.vx = 0;
+      node.vy = 0;
+      
+      // Update fixed positions if it was frozen
+      if (node.fx !== undefined) node.fx = node.x;
+      if (node.fy !== undefined) node.fy = node.y;
+    });
+
+    setSettings(s => ({
+      ...s,
+      repulsion: -10, // less repulsion so they can get closer
+      linkDistance: 15,
+      centerGravity: 2, // strong gravity to pull everything to center
+      staticMode: false // Unfreeze so they can naturally untangle
+    }));
+
+    if (fgRef.current && fgRef.current.d3Force('charge')) {
+      fgRef.current.d3ReheatSimulation();
+      
+      // Re-center the camera
+      setTimeout(() => {
+        if (fgRef.current) {
+          fgRef.current.zoomToFit(600);
+        }
+      }, 800);
+    }
+  };
+
+
+
   // Auto-fit graph
   useEffect(() => {
     if (!loading && displayGraphData.nodes.length > 0 && fgRef.current) {
-      if (mode === '2D') {
-        fgRef.current.zoomToFit(400);
-      }
+      const timer = setTimeout(() => {
+        if (fgRef.current) {
+          fgRef.current.zoomToFit(600, 50); // added 50px padding
+        }
+      }, 600); // Wait for simulation to pull nodes apart
+      return () => clearTimeout(timer);
     }
-  }, [loading, displayGraphData, mode]);
+  }, [loading, displayGraphData, viewMode, agentId]);
 
   const handleNodeClick = useCallback(node => {
     // Disable editing for schema nodes
@@ -152,8 +234,7 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
       
       const dx = node.x - otherNode.x;
       const dy = node.y - otherNode.y;
-      const dz = (node.z || 0) - (otherNode.z || 0);
-      const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+      const distance = Math.sqrt(dx*dx + dy*dy);
       
       if (distance < overlapThreshold) {
         targetNode = otherNode;
@@ -354,51 +435,23 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
     }
   }, [hoverNode, highlightNodes]);
 
-  // 3D Object
-  const getThreeObject = useCallback(node => {
-    const isHighlighted = highlightNodes.has(node);
-    const isDimmed = hoverNode && !isHighlighted;
 
-    const sprite = new SpriteText(getNodeLabel(node));
-    sprite.color = getNodeColor(node);
-    sprite.textHeight = 4;
-    sprite.material.depthWrite = false; // keep text above lines
-    sprite.material.opacity = isDimmed ? 0.2 : 1;
-    sprite.material.transparent = true;
-    return sprite;
-  }, [hoverNode, highlightNodes]);
 
-  if (loading) {
-    return (
-      <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-        <Loader2 className="animate-spin text-blue-500" size={32} />
-      </div>
-    );
-  }
-
+  // Removed full unmount on loading to preserve ForceGraph2D container size during transitions
   return (
     <div className="glass-panel" style={{ height: 'calc(100vh - 120px)', padding: 0, position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'absolute', top: '1rem', right: '1rem', zIndex: 10, display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+      {loading && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(2px)' }}>
+          <Loader2 className="animate-spin text-blue-500" size={32} />
+        </div>
+      )}
+      <div style={{ position: 'absolute', top: '1rem', right: isSidebarOpen ? '430px' : '4rem', zIndex: 10, display: 'flex', gap: '0.5rem', alignItems: 'center', transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
         {refreshing && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#60a5fa', marginRight: '1rem', backgroundColor: 'rgba(0,0,0,0.5)', padding: '0.25rem 0.75rem', borderRadius: '1rem' }}>
             <Loader2 className="animate-spin" size={16} />
             <span style={{ fontSize: '0.875rem' }}>Refreshing graph...</span>
           </div>
         )}
-        <button 
-          className={`add-btn ${mode === '2D' ? 'active' : ''}`}
-          onClick={() => setMode('2D')}
-          style={{ backgroundColor: mode === '2D' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255,255,255,0.05)' }}
-        >
-          <Layers size={16} /> 2D
-        </button>
-        <button 
-          className={`add-btn ${mode === '3D' ? 'active' : ''}`}
-          onClick={() => setMode('3D')}
-          style={{ backgroundColor: mode === '3D' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255,255,255,0.05)' }}
-        >
-          <Box size={16} /> 3D
-        </button>
         {viewMode !== 'schema' && (
           <button 
             className="add-btn"
@@ -408,7 +461,101 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
             <PlusCircle size={16} /> New Node
           </button>
         )}
+        <button 
+          className={`add-btn ${showSettings ? 'active' : ''}`}
+          onClick={() => setShowSettings(!showSettings)}
+          style={{ backgroundColor: showSettings ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255,255,255,0.05)', marginLeft: '0.5rem' }}
+          title="Visualization Preferences"
+        >
+          <Settings size={16} />
+        </button>
       </div>
+
+      {showSettings && (
+        <div style={{
+          position: 'absolute',
+          top: '4rem',
+          right: isSidebarOpen ? '430px' : '4rem',
+          zIndex: 10,
+          background: 'rgba(0,0,0,0.85)',
+          padding: '1rem',
+          borderRadius: '0.5rem',
+          border: '1px solid rgba(255,255,255,0.1)',
+          color: 'white',
+          width: '250px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem',
+          transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}>
+          <h3 style={{ margin: 0, fontSize: '1rem' }}>Visualization Settings</h3>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
+              <span>Repulsion Force</span>
+              <span>{settings.repulsion}</span>
+            </label>
+            <input 
+              type="range" 
+              min="-1000" 
+              max="-10" 
+              step="10" 
+              value={settings.repulsion}
+              onChange={e => setSettings(s => ({ ...s, repulsion: parseInt(e.target.value) }))}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
+              <span>Link Distance</span>
+              <span>{settings.linkDistance}</span>
+            </label>
+            <input 
+              type="range" 
+              min="10" 
+              max="150" 
+              step="5" 
+              value={settings.linkDistance}
+              onChange={e => setSettings(s => ({ ...s, linkDistance: parseInt(e.target.value) }))}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
+              <span>Center Gravity</span>
+              <span>{settings.centerGravity}</span>
+            </label>
+            <input 
+              type="range" 
+              min="0" 
+              max="10" 
+              step="0.1" 
+              value={settings.centerGravity}
+              onChange={e => setSettings(s => ({ ...s, centerGravity: parseFloat(e.target.value) }))}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <input 
+              type="checkbox" 
+              id="staticMode"
+              checked={settings.staticMode}
+              onChange={e => setSettings(s => ({ ...s, staticMode: e.target.checked }))}
+            />
+            <label htmlFor="staticMode" style={{ fontSize: '0.9rem', cursor: 'pointer' }}>
+              Freeze Graph (Static Mode)
+            </label>
+          </div>
+
+          <button 
+            className="add-btn" 
+            onClick={handleCompact}
+            style={{ backgroundColor: 'rgba(59, 130, 246, 0.5)', marginTop: '0.5rem', width: '100%', justifyContent: 'center' }}
+          >
+            Compact Graph
+          </button>
+        </div>
+      )}
 
       {isPanelOpen && (
         <NodeDetailsPanel 
@@ -427,47 +574,26 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
         />
       )}
 
-      {mode === '2D' ? (
-        <ForceGraph2D
-          ref={fgRef}
-          graphData={displayGraphData}
-          nodeCanvasObject={paintRing}
-          nodeLabel={getTooltipHTML}
-          onNodeHover={handleNodeHover}
-          onLinkHover={handleLinkHover}
-          onNodeClick={handleNodeClick}
-          onBackgroundClick={handleBackgroundClick}
-          onNodeDragEnd={handleNodeDragEnd}
-          nodeRelSize={6}
-          linkColor={getLinkColor}
-          linkWidth={getLinkWidth}
-          linkLabel={link => link.label}
-          linkDirectionalArrowLength={3.5}
-          linkDirectionalArrowRelPos={1}
-          backgroundColor="rgba(0,0,0,0)"
-        />
-      ) : (
-        <ForceGraph3D
-          ref={fgRef}
-          graphData={displayGraphData}
-          nodeThreeObject={getThreeObject}
-          nodeThreeObjectExtend={true}
-          nodeLabel={getTooltipHTML}
-          onNodeHover={handleNodeHover}
-          onLinkHover={handleLinkHover}
-          onNodeClick={handleNodeClick}
-          onBackgroundClick={handleBackgroundClick}
-          onNodeDragEnd={handleNodeDragEnd}
-          nodeColor={getNodeColor}
-          nodeRelSize={6}
-          linkColor={getLinkColor}
-          linkWidth={getLinkWidth}
-          linkLabel={link => link.label}
-          linkDirectionalArrowLength={3.5}
-          linkDirectionalArrowRelPos={1}
-          backgroundColor="rgba(0,0,0,0)"
-        />
-      )}
+      <ForceGraph2D
+        key={`${agentId}-${viewMode}`}
+        ref={fgRef}
+        graphData={displayGraphData}
+        nodeCanvasObject={paintRing}
+        nodeLabel={getTooltipHTML}
+        onNodeHover={handleNodeHover}
+        onLinkHover={handleLinkHover}
+        onNodeClick={handleNodeClick}
+        onBackgroundClick={handleBackgroundClick}
+        onNodeDragEnd={handleNodeDragEnd}
+
+        nodeRelSize={6}
+        linkColor={getLinkColor}
+        linkWidth={getLinkWidth}
+        linkLabel={link => link.label}
+        linkDirectionalArrowLength={3.5}
+        linkDirectionalArrowRelPos={1}
+        backgroundColor="rgba(0,0,0,0)"
+      />
     </div>
   );
 }

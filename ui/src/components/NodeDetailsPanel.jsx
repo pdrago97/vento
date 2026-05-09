@@ -8,12 +8,14 @@ export default function NodeDetailsPanel({ node, onClose, onSave }) {
 
   useEffect(() => {
     if (node) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         id: node.id || `node_${Date.now()}`,
         label: node.label || 'Class',
         properties: { ...node.properties }
       });
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({ id: `node_${Date.now()}`, label: 'Class', properties: {} });
     }
   }, [node]);
