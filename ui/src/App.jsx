@@ -271,7 +271,7 @@ function App() {
               className="add-btn bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40"
               style={{ padding: '0.25rem 0.75rem', fontSize: '0.85rem' }}
             >
-              <Plus size={14} /> New Agent
+              <Plus size={14} /> New Ontology & Agent
             </button>
           </div>
         </div>

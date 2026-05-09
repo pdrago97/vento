@@ -101,6 +101,10 @@ def update_ontology(payload: SchemaPayload, agent_id: str = "global"):
     ontology_manager.save_schema(payload.model_dump(), agent_id)
     return {"status": "ontology_updated", "schema": ontology_manager.get_schema(agent_id)}
 
+@app.get("/ontology/{agent_id}/versions")
+def get_ontology_versions(agent_id: str):
+    return {"versions": ontology_manager.list_versions(agent_id)}
+
 @app.get("/graph")
 def get_graph(agent_id: str = "global"):
     """Returns the full knowledge graph schema for visualization."""
@@ -133,9 +137,11 @@ class AgentPayload(BaseModel):
     name: str
     instruction: str
     tools: list[str]
+    ontology: dict | None = None
 
 class AgentGeneratePayload(BaseModel):
     description: str
+    current_config: dict | None = None
 
 @app.get("/agents")
 def list_agents():
@@ -148,6 +154,8 @@ def list_tools():
 @app.post("/agents")
 def save_agent(payload: AgentPayload):
     create_or_update_agent(payload.agent_id, payload.name, payload.instruction, payload.tools)
+    if payload.ontology:
+        ontology_manager.save_schema(payload.ontology, payload.agent_id)
     return {"status": "success", "agent_id": payload.agent_id}
 
 @app.post("/agents/generate")
@@ -155,9 +163,13 @@ def generate_agent(payload: AgentGeneratePayload):
     if not client:
         return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
         
-    prompt = f"""You are an AI assistant helping a user build a new agent for a knowledge graph system.
-The user will describe the agent they want.
-Your task is to generate the configuration for this agent based on their description.
+    import json
+    current_context = ""
+    if payload.current_config:
+        current_context = f"\nThe current agent configuration is:\n{json.dumps(payload.current_config, indent=2)}\n\nUpdate this configuration according to the user's latest request. Modify the ontology, instructions, or tools as requested, while keeping the rest intact."
+
+    prompt = f"""You are an AI assistant helping a user build and refine a new agent for a knowledge graph system.
+The user will describe the agent they want or provide instructions to refine the current setup.{current_context}
 
 Available tools the agent can use: {list(AVAILABLE_TOOLS.keys())}
 
@@ -166,14 +178,18 @@ Generate a JSON object with the following fields:
 - "name": A human-readable display name for the agent.
 - "instruction": The system prompt/instruction for the agent. This should be comprehensive and tell the agent its mission, its persona, and explicitly tell it when and how to use the available tools to save/update memories in its knowledge graph. The agent MUST be instructed to use the tool with its specific `agent_id`.
 - "tools": An array of tool names from the available tools list that this agent should have access to.
+- "ontology": An initial graph schema tailored for this agent's domain. It must contain:
+    - "nodes": an array of class strings (e.g. ["Person", "Company"])
+    - "predicates": an array of relation strings (e.g. ["WORKS_AT", "OWNS"])
+    - "properties": a dictionary mapping node class names to arrays of property string names (e.g. {{"Person": ["name", "age"]}})
 
 Return ONLY the JSON object, without any markdown formatting like ```json.
 
-User Description: {payload.description}
+User Request: {payload.description}
 """
     try:
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-3.1-flash-lite',
             contents=prompt
         )
         
@@ -216,7 +232,7 @@ User request: {payload.message}
 """
     try:
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-3.1-flash-lite',
             contents=prompt
         )
         

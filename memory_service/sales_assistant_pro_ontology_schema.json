@@ -1,0 +1,38 @@
+{
+    "nodes": [
+        "Customer",
+        "Plan",
+        "Policy",
+        "Interaction"
+    ],
+    "predicates": [
+        "INTERESTED_IN",
+        "SUBSCRIBED_TO",
+        "HAS_POLICY",
+        "INCLUDES_BENEFIT"
+    ],
+    "properties": {
+        "Customer": [
+            "name",
+            "email",
+            "status",
+            "preferred_plan_type"
+        ],
+        "Plan": [
+            "plan_name",
+            "price",
+            "billing_cycle",
+            "target_audience"
+        ],
+        "Policy": [
+            "policy_type",
+            "duration_days",
+            "description"
+        ],
+        "Interaction": [
+            "timestamp",
+            "sentiment",
+            "key_questions_asked"
+        ]
+    }
+}

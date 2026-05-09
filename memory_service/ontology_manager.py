@@ -41,6 +41,29 @@ class OntologyManager:
         schema_file = self._get_schema_file(agent_id)
         with open(schema_file, "w") as f:
             json.dump(self.schemas[agent_id], f, indent=4)
+            
+        import time
+        version_dir = "ontology_versions"
+        os.makedirs(version_dir, exist_ok=True)
+        version_file = os.path.join(version_dir, f"{self._get_schema_file(agent_id).replace('.json', '')}_v{int(time.time())}.json")
+        with open(version_file, "w") as f:
+            json.dump(self.schemas[agent_id], f, indent=4)
+
+    def list_versions(self, agent_id: str = "global") -> list:
+        version_dir = "ontology_versions"
+        if not os.path.exists(version_dir):
+            return []
+        prefix = f"{self._get_schema_file(agent_id).replace('.json', '')}_v"
+        versions = []
+        for filename in os.listdir(version_dir):
+            if filename.startswith(prefix) and filename.endswith(".json"):
+                timestamp_str = filename.replace(prefix, "").replace(".json", "")
+                try:
+                    timestamp = int(timestamp_str)
+                    versions.append(timestamp)
+                except ValueError:
+                    pass
+        return sorted(versions, reverse=True)
 
     def validate_triple(self, subject: str, predicate: str, object_val: str, agent_id: str = "global") -> bool:
         """Validates if a predicate is allowed in the ontology for a specific agent."""
