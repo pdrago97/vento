@@ -53,6 +53,7 @@ function App() {
   const [agentsList, setAgentsList] = useState(['global']);
   const [schemasList, setSchemasList] = useState(['global']);
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
+  const [isObservabilityOpen, setIsObservabilityOpen] = useState(false);
 
   // Input states
   const [newNode, setNewNode] = useState('');
@@ -292,6 +293,12 @@ function App() {
             >
               <Plus size={14} /> New
             </button>
+            <button 
+              onClick={() => setIsObservabilityOpen(true)}
+              className="btn btn-secondary btn-sm"
+            >
+              <Activity size={14} /> Channels & Reports
+            </button>
 
             <button 
               onClick={saveOntology}
@@ -315,16 +322,6 @@ function App() {
               isAssistantOpen={isAssistantOpen}
               refreshTrigger={refreshGraph} 
               onOpenIngest={() => setIsIngestModalOpen(true)}
-            />
-          ) : viewMode === 'reports' ? (
-            <CustomReportsDashboard 
-              agentId={agentId} 
-              isSidebarOpen={false} 
-              isAssistantOpen={isAssistantOpen}
-            />
-          ) : viewMode === 'observability' ? (
-            <ObservabilityDashboard 
-              agentId={agentId} 
             />
           ) : (
             <GraphExplorer 
@@ -365,18 +362,6 @@ function App() {
             >
               Operational Inventory
             </button>
-            <button 
-              className={`sidebar-tab ${activeTab === 'reports' ? 'active' : ''}`}
-              onClick={() => setActiveTab('reports')}
-            >
-              Custom Reports
-            </button>
-            <button 
-              className={`sidebar-tab ${activeTab === 'observability' ? 'active' : ''}`}
-              onClick={() => setActiveTab('observability')}
-            >
-              Observability
-            </button>
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeTab === 'schema' ? (
@@ -392,13 +377,7 @@ function App() {
                 </div>
               </>
             ) : activeTab === 'inventory' ? (
-              <InventoryExplorer agentId={agentId} />
-            ) : activeTab === 'reports' ? (
-              <CustomReportsDashboard agentId={agentId} />
-            ) : activeTab === 'observability' ? (
-              <div style={{ padding: '1rem', color: 'var(--text-muted)' }}>
-                Select an agent from the top bar to view its observability metrics, interactions, sessions, and sync events.
-              </div>
+              <AdminChat agentId={agentId} />
             ) : activeTab === 'memory' ? (
               <AgentChat agentId={agentId} onUpdate={() => setRefreshGraph(prev => prev + 1)} />
             ) : (
@@ -422,6 +401,13 @@ function App() {
         />
       )}
 
+      {isObservabilityOpen && (
+        <ObservabilityDashboard 
+          agentId={agentId}
+          onClose={() => setIsObservabilityOpen(false)}
+        />
+      )}
+
       {isIngestModalOpen && (
         <KnowledgeIngestionModal
           agentId={agentId}
@@ -438,8 +424,7 @@ function App() {
         />
       )}
 
-      {/* Floating Customer Chat Widget */}
-      <CustomerChatWidget agentId={agentId} />
+      {/* Removed Floating Customer Chat Widget */}
     </>
   );
 }

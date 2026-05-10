@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Activity, MessageSquare, Zap, Terminal, RefreshCw, Key, Link2, CheckCircle2, Play, Square, HelpCircle } from 'lucide-react';
+import { Activity, MessageSquare, Zap, Terminal, RefreshCw, Key, Link2, CheckCircle2, Play, Square, HelpCircle, FileText, X } from 'lucide-react';
+import CustomReportsDashboard from './CustomReportsDashboard';
 
-const ObservabilityDashboard = ({ agentId }) => {
+const ObservabilityDashboard = ({ agentId, onClose }) => {
   const [activeTab, setActiveTab] = useState('channels');
   const [showDiscordHelp, setShowDiscordHelp] = useState(false);
   
@@ -160,48 +161,60 @@ const ObservabilityDashboard = ({ agentId }) => {
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-main)' }}>
-      {/* Header */}
-      <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--border-medium)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <Activity size={24} className="text-primary" />
-        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-main)' }}>Agent Observability</h2>
-        <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(255,255,255,0.1)', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          {agentId}
-        </span>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+      <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-medium)', borderRadius: '12px', width: '90vw', height: '90vh', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Header & Tabs */}
+        <div style={{ padding: '1.5rem 2rem 0', borderBottom: '1px solid var(--border-medium)', display: 'flex', flexDirection: 'column', gap: '1.5rem', background: 'var(--bg-glass)' }}>
+          <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="flex-row" style={{ alignItems: 'center' }}>
+              <Activity size={24} className="text-primary" />
+              <h2 className="text-h3" style={{ margin: 0, color: 'var(--text-main)' }}>Operations & Observability</h2>
+              <span className="badge badge-muted" style={{ marginLeft: '0.5rem' }}>
+                {agentId}
+              </span>
+            </div>
+            <button onClick={onClose} className="btn-ghost btn-icon">
+              <X size={20} />
+            </button>
+          </div>
+
+        <div className="flex-row" style={{ gap: '2rem' }}>
+          <button 
+            className={`tab-button ${activeTab === 'channels' ? 'active' : ''}`}
+            onClick={() => setActiveTab('channels')}
+            style={{ background: 'none', border: 'none', padding: '0 0 1rem 0', cursor: 'pointer', borderBottom: activeTab === 'channels' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'channels' ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: 500, display: 'flex', gap: '0.5rem', alignItems: 'center', transition: 'var(--transition-fast)' }}
+          ><Link2 size={16} /> Channels</button>
+          <button 
+            className={`tab-button ${activeTab === 'observability' ? 'active' : ''}`}
+            onClick={() => setActiveTab('observability')}
+            style={{ background: 'none', border: 'none', padding: '0 0 1rem 0', cursor: 'pointer', borderBottom: activeTab === 'observability' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'observability' ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: 500, display: 'flex', gap: '0.5rem', alignItems: 'center', transition: 'var(--transition-fast)' }}
+          ><Terminal size={16} /> Live Metrics</button>
+          <button 
+            className={`tab-button ${activeTab === 'interactions' ? 'active' : ''}`}
+            onClick={() => setActiveTab('interactions')}
+            style={{ background: 'none', border: 'none', padding: '0 0 1rem 0', cursor: 'pointer', borderBottom: activeTab === 'interactions' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'interactions' ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: 500, display: 'flex', gap: '0.5rem', alignItems: 'center', transition: 'var(--transition-fast)' }}
+          ><MessageSquare size={16} /> Interactions</button>
+          <button 
+            className={`tab-button ${activeTab === 'sessions' ? 'active' : ''}`}
+            onClick={() => setActiveTab('sessions')}
+            style={{ background: 'none', border: 'none', padding: '0 0 1rem 0', cursor: 'pointer', borderBottom: activeTab === 'sessions' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'sessions' ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: 500, display: 'flex', gap: '0.5rem', alignItems: 'center', transition: 'var(--transition-fast)' }}
+          ><Activity size={16} /> Active Sessions</button>
+          <button 
+            className={`tab-button ${activeTab === 'syncs' ? 'active' : ''}`}
+            onClick={() => setActiveTab('syncs')}
+            style={{ background: 'none', border: 'none', padding: '0 0 1rem 0', cursor: 'pointer', borderBottom: activeTab === 'syncs' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'syncs' ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: 500, display: 'flex', gap: '0.5rem', alignItems: 'center', transition: 'var(--transition-fast)' }}
+          ><RefreshCw size={16} /> Sync Events</button>
+          <button 
+            className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
+            onClick={() => setActiveTab('reports')}
+            style={{ background: 'none', border: 'none', padding: '0 0 1rem 0', cursor: 'pointer', borderBottom: activeTab === 'reports' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'reports' ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: 500, display: 'flex', gap: '0.5rem', alignItems: 'center', transition: 'var(--transition-fast)' }}
+          ><FileText size={16} /> Custom Reports</button>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex-row" style={{ borderBottom: '1px solid var(--border-medium)', padding: '0 2rem', gap: '2rem' }}>
-        <button 
-          className={`tab-button ${activeTab === 'channels' ? 'active' : ''}`}
-          onClick={() => setActiveTab('channels')}
-          style={{ background: 'none', border: 'none', padding: '1rem 0', cursor: 'pointer', borderBottom: activeTab === 'channels' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'channels' ? 'var(--primary-light)' : 'var(--text-muted)', fontWeight: activeTab === 'channels' ? 600 : 500, display: 'flex', gap: '0.5rem', alignItems: 'center' }}
-        ><Link2 size={16} /> Channels</button>
-        <button 
-          className={`tab-button ${activeTab === 'observability' ? 'active' : ''}`}
-          onClick={() => setActiveTab('observability')}
-          style={{ background: 'none', border: 'none', padding: '1rem 0', cursor: 'pointer', borderBottom: activeTab === 'observability' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'observability' ? 'var(--primary-light)' : 'var(--text-muted)', fontWeight: activeTab === 'observability' ? 600 : 500, display: 'flex', gap: '0.5rem', alignItems: 'center' }}
-        ><Terminal size={16} /> Live Metrics</button>
-        <button 
-          className={`tab-button ${activeTab === 'interactions' ? 'active' : ''}`}
-          onClick={() => setActiveTab('interactions')}
-          style={{ background: 'none', border: 'none', padding: '1rem 0', cursor: 'pointer', borderBottom: activeTab === 'interactions' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'interactions' ? 'var(--primary-light)' : 'var(--text-muted)', fontWeight: activeTab === 'interactions' ? 600 : 500, display: 'flex', gap: '0.5rem', alignItems: 'center' }}
-        ><MessageSquare size={16} /> Interactions</button>
-        <button 
-          className={`tab-button ${activeTab === 'sessions' ? 'active' : ''}`}
-          onClick={() => setActiveTab('sessions')}
-          style={{ background: 'none', border: 'none', padding: '1rem 0', cursor: 'pointer', borderBottom: activeTab === 'sessions' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'sessions' ? 'var(--primary-light)' : 'var(--text-muted)', fontWeight: activeTab === 'sessions' ? 600 : 500, display: 'flex', gap: '0.5rem', alignItems: 'center' }}
-        ><Activity size={16} /> Active Sessions</button>
-        <button 
-          className={`tab-button ${activeTab === 'syncs' ? 'active' : ''}`}
-          onClick={() => setActiveTab('syncs')}
-          style={{ background: 'none', border: 'none', padding: '1rem 0', cursor: 'pointer', borderBottom: activeTab === 'syncs' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'syncs' ? 'var(--primary-light)' : 'var(--text-muted)', fontWeight: activeTab === 'syncs' ? 600 : 500, display: 'flex', gap: '0.5rem', alignItems: 'center' }}
-        ><RefreshCw size={16} /> Sync Events</button>
-      </div>
-
-      <div style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
+      <div style={{ flex: 1, padding: '1.5rem 2rem', overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {activeTab === 'channels' ? (
-          <div className="flex-col" style={{ gap: '1.5rem', maxWidth: '800px' }}>
+          <div className="flex-col" style={{ gap: '1.5rem', width: '100%', maxWidth: '1400px', margin: '0 auto', height: '100%', overflowY: 'auto', paddingRight: '0.5rem' }}>
             <p className="text-muted text-sm">
               Manage your agent's integrations with external platforms. OpenClaw will automatically route messages and synchronize memory context across these enabled channels.
             </p>
@@ -210,40 +223,39 @@ const ObservabilityDashboard = ({ agentId }) => {
             <div className="flex-col" style={{ gap: '1rem' }}>
               
               {/* Discord */}
-              <div className="glass-panel" style={{ padding: '1.25rem', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)' }}>
-                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <div className="flex-row" style={{ gap: '0.75rem', alignItems: 'center' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#5865F2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                      <MessageSquare size={20} />
+              <div className="surface-panel" style={{ padding: '1.5rem' }}>
+                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: showDiscordHelp || channels.discord.enabled ? '1.5rem' : '0' }}>
+                  <div className="flex-row" style={{ gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#5865F2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                      <MessageSquare size={24} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: '1.05rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ fontWeight: 600, fontSize: '1.1rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         Discord Bot
-                        <button onClick={() => setShowDiscordHelp(!showDiscordHelp)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="Como configurar">
+                        <button onClick={() => setShowDiscordHelp(!showDiscordHelp)} className="btn-ghost btn-icon" style={{ padding: '4px' }} title="Como configurar">
                           <HelpCircle size={16} />
                         </button>
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Sync memory across Discord servers and DMs.</div>
+                      <div className="text-muted text-sm">Sync memory across Discord servers and DMs.</div>
                     </div>
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                    <span style={{ fontSize: '0.85rem', color: channels.discord.enabled ? 'var(--success-color)' : 'var(--text-muted)', fontWeight: 500 }}>
+                  <label className="flex-row" style={{ cursor: 'pointer' }}>
+                    <span style={{ color: channels.discord.enabled ? 'var(--accent-color)' : 'var(--text-muted)', fontWeight: 500, fontSize: '0.875rem' }}>
                       {channels.discord.enabled ? 'Active' : 'Disabled'}
                     </span>
                     <input 
                       type="checkbox" 
                       checked={channels.discord.enabled} 
                       onChange={() => toggleChannel('discord')}
-                      style={{ accentColor: 'var(--primary-color)', width: '16px', height: '16px' }}
                     />
                   </label>
                 </div>
                 
                 {showDiscordHelp && (
-                  <div style={{ marginBottom: '1rem', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', color: 'var(--text-main)', border: '1px solid var(--border-medium)' }}>
-                    <h4 style={{ margin: '0 0 0.5rem 0', color: 'var(--primary-color)' }}>Como configurar o Discord Bot</h4>
-                    <ol style={{ paddingLeft: '1.2rem', margin: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem', color: 'var(--text-muted)' }}>
-                      <li>Acesse o <a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer" style={{ color: 'var(--primary-light)', textDecoration: 'none' }}>Discord Developer Portal</a>.</li>
+                  <div className="card" style={{ marginBottom: '1.5rem', background: 'var(--bg-dark)' }}>
+                    <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--primary-color)' }}>Como configurar o Discord Bot</h4>
+                    <ol style={{ paddingLeft: '1.2rem', margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                      <li>Acesse o <a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>Discord Developer Portal</a>.</li>
                       <li>Clique em <strong>New Application</strong> e crie seu bot.</li>
                       <li>No menu lateral <strong>Bot</strong>, clique em <strong>Reset Token</strong> e copie o token gerado.</li>
                       <li>Um pouco mais abaixo, ative a opção <strong>Message Content Intent</strong> na seção Privileged Gateway Intents e salve.</li>
@@ -255,8 +267,8 @@ const ObservabilityDashboard = ({ agentId }) => {
                 )}
                 
                 {channels.discord.enabled && (
-                  <div className="form-group" style={{ marginBottom: 0, padding: '1rem', background: 'var(--bg-dark)', borderRadius: 'var(--radius-sm)' }}>
-                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}><Key size={14} /> Discord Bot Token</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Key size={14} /> Discord Bot Token</label>
                     <input 
                       type="password" 
                       value={channels.discord.token} 
@@ -269,33 +281,32 @@ const ObservabilityDashboard = ({ agentId }) => {
               </div>
 
               {/* Slack */}
-              <div className="glass-panel" style={{ padding: '1.25rem', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)' }}>
-                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <div className="flex-row" style={{ gap: '0.75rem', alignItems: 'center' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#E01E5A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                      <MessageSquare size={20} />
+              <div className="surface-panel" style={{ padding: '1.5rem' }}>
+                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: channels.slack.enabled ? '1.5rem' : '0' }}>
+                  <div className="flex-row" style={{ gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#E01E5A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                      <MessageSquare size={24} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: '1.05rem', color: 'var(--text-main)' }}>Slack Integration</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Enterprise-grade context synchronization.</div>
+                      <div style={{ fontWeight: 600, fontSize: '1.1rem', color: 'var(--text-main)' }}>Slack Integration</div>
+                      <div className="text-muted text-sm">Enterprise-grade context synchronization.</div>
                     </div>
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                    <span style={{ fontSize: '0.85rem', color: channels.slack.enabled ? 'var(--success-color)' : 'var(--text-muted)', fontWeight: 500 }}>
+                  <label className="flex-row" style={{ cursor: 'pointer' }}>
+                    <span style={{ color: channels.slack.enabled ? 'var(--accent-color)' : 'var(--text-muted)', fontWeight: 500, fontSize: '0.875rem' }}>
                       {channels.slack.enabled ? 'Active' : 'Disabled'}
                     </span>
                     <input 
                       type="checkbox" 
                       checked={channels.slack.enabled} 
                       onChange={() => toggleChannel('slack')}
-                      style={{ accentColor: 'var(--primary-color)', width: '16px', height: '16px' }}
                     />
                   </label>
                 </div>
                 
                 {channels.slack.enabled && (
-                  <div className="form-group" style={{ marginBottom: 0, padding: '1rem', background: 'var(--bg-dark)', borderRadius: 'var(--radius-sm)' }}>
-                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}><Key size={14} /> Slack Bot Token (xoxb-)</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Key size={14} /> Slack Bot Token (xoxb-)</label>
                     <input 
                       type="password" 
                       value={channels.slack.token} 
@@ -308,33 +319,32 @@ const ObservabilityDashboard = ({ agentId }) => {
               </div>
 
               {/* WhatsApp */}
-              <div className="glass-panel" style={{ padding: '1.25rem', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)' }}>
-                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <div className="flex-row" style={{ gap: '0.75rem', alignItems: 'center' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                      <MessageSquare size={20} />
+              <div className="surface-panel" style={{ padding: '1.5rem' }}>
+                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: channels.whatsapp.enabled ? '1.5rem' : '0' }}>
+                  <div className="flex-row" style={{ gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                      <MessageSquare size={24} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: '1.05rem', color: 'var(--text-main)' }}>WhatsApp Business</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>B2C conversational AI integration.</div>
+                      <div style={{ fontWeight: 600, fontSize: '1.1rem', color: 'var(--text-main)' }}>WhatsApp Business</div>
+                      <div className="text-muted text-sm">B2C conversational AI integration.</div>
                     </div>
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                    <span style={{ fontSize: '0.85rem', color: channels.whatsapp.enabled ? 'var(--success-color)' : 'var(--text-muted)', fontWeight: 500 }}>
+                  <label className="flex-row" style={{ cursor: 'pointer' }}>
+                    <span style={{ color: channels.whatsapp.enabled ? 'var(--accent-color)' : 'var(--text-muted)', fontWeight: 500, fontSize: '0.875rem' }}>
                       {channels.whatsapp.enabled ? 'Active' : 'Disabled'}
                     </span>
                     <input 
                       type="checkbox" 
                       checked={channels.whatsapp.enabled} 
                       onChange={() => toggleChannel('whatsapp')}
-                      style={{ accentColor: 'var(--primary-color)', width: '16px', height: '16px' }}
                     />
                   </label>
                 </div>
                 
                 {channels.whatsapp.enabled && (
-                  <div className="form-group" style={{ marginBottom: 0, padding: '1rem', background: 'var(--bg-dark)', borderRadius: 'var(--radius-sm)' }}>
-                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}><Key size={14} /> WhatsApp API Token</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Key size={14} /> WhatsApp API Token</label>
                     <input 
                       type="password" 
                       value={channels.whatsapp.token} 
@@ -348,7 +358,7 @@ const ObservabilityDashboard = ({ agentId }) => {
 
             </div>
             
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
               <button className="btn btn-primary" onClick={handleSaveChannels} disabled={saving}>
                 {saving ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                 {saving ? 'Applying...' : 'Apply Configuration'}
@@ -357,35 +367,35 @@ const ObservabilityDashboard = ({ agentId }) => {
 
           </div>
         ) : activeTab === 'observability' ? (
-          <div className="flex-col" style={{ gap: '1.5rem', height: '100%', maxWidth: '1000px' }}>
+          <div className="flex-col" style={{ gap: '1.5rem', height: '100%', width: '100%', maxWidth: '1400px', margin: '0 auto' }}>
 
-            {/* Runner Controls */}
-            <div className="glass-panel" style={{ padding: '1.25rem', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)' }}>
-              <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 3fr', gap: '1.5rem' }}>
+              {/* Runner Controls */}
+              <div className="surface-panel flex-col" style={{ padding: '1.5rem', justifyContent: 'space-between', height: '100%' }}>
                 <div className="flex-row" style={{ gap: '1rem', alignItems: 'center' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: runnerActive ? 'var(--success-color)' : 'var(--text-muted)' }}>
-                    <Terminal size={20} />
+                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'var(--bg-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: runnerActive ? 'var(--accent-color)' : 'var(--text-muted)', border: '1px solid var(--border-light)' }}>
+                    <Terminal size={24} />
                   </div>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: '1.05rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ fontWeight: 600, fontSize: '1.1rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       Autonomous Runner 
                       <span style={{ 
                         width: '8px', height: '8px', borderRadius: '50%', 
-                        background: runnerActive ? 'var(--success-color)' : 'var(--text-muted)',
-                        boxShadow: runnerActive ? '0 0 8px var(--success-color)' : 'none',
+                        background: runnerActive ? 'var(--accent-color)' : 'var(--text-muted)',
+                        boxShadow: runnerActive ? '0 0 8px var(--accent-glow)' : 'none',
                         display: 'inline-block'
                       }}></span>
                     </div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {runnerActive ? 'Process is actively listening for events.' : 'Process is currently offline.'}
+                    <div className="text-muted text-sm">
+                      {runnerActive ? 'Actively listening.' : 'Process is offline.'}
                     </div>
                   </div>
                 </div>
                 <button 
-                  className={`btn ${runnerActive ? 'btn-danger' : 'btn-primary'}`}
+                  className={`btn ${runnerActive ? 'btn-danger' : 'btn-success'}`}
                   onClick={toggleRunner}
                   disabled={togglingRunner || !agentId}
-                  style={{ minWidth: '140px', justifyContent: 'center' }}
+                  style={{ width: '100%', justifyContent: 'center', marginTop: '1rem', padding: '0.75rem' }}
                 >
                   {togglingRunner ? (
                     <RefreshCw size={16} className="animate-spin" />
@@ -397,44 +407,48 @@ const ObservabilityDashboard = ({ agentId }) => {
                   {togglingRunner ? (runnerActive ? 'Stopping...' : 'Starting...') : (runnerActive ? 'Stop Runner' : 'Start Runner')}
                 </button>
               </div>
-            </div>
-            
-            {/* Metrics Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
-              <div className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <div className="text-muted" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Activity size={14} /> Active Sessions</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-main)' }}>{metrics.active_sessions.toLocaleString()}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--success-color)' }}>Last 24h</div>
+              
+              {/* Metrics Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div className="text-muted" style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}><Activity size={16} /> Active Sessions</div>
+                <div style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-main)' }}>{metrics.active_sessions.toLocaleString()}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--accent-color)' }}>Last 24h</div>
               </div>
-              <div className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <div className="text-muted" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><MessageSquare size={14} /> Total Messages</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-main)' }}>{metrics.total_messages.toLocaleString()}</div>
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div className="text-muted" style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}><MessageSquare size={16} /> Total Messages</div>
+                <div style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-main)' }}>{metrics.total_messages.toLocaleString()}</div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Historical total</div>
               </div>
-              <div className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <div className="text-muted" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><RefreshCw size={14} /> Sync Events</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-main)' }}>{metrics.sync_events.toLocaleString()}</div>
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div className="text-muted" style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}><RefreshCw size={16} /> Sync Events</div>
+                <div style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-main)' }}>{metrics.sync_events.toLocaleString()}</div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Memory graph updates</div>
               </div>
-              <div className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <div className="text-muted" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Zap size={14} /> Avg Latency</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-main)' }}>{Math.round(metrics.avg_latency_ms)}ms</div>
-                <div style={{ fontSize: '0.75rem', color: metrics.avg_latency_ms > 2000 ? 'var(--danger-color)' : 'var(--success-color)' }}>
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div className="text-muted" style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}><Zap size={16} /> Avg Latency</div>
+                <div style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-main)' }}>{Math.round(metrics.avg_latency_ms)}ms</div>
+                <div style={{ fontSize: '0.75rem', color: metrics.avg_latency_ms > 2000 ? 'var(--danger-color)' : 'var(--accent-color)' }}>
                   {metrics.avg_latency_ms === 0 ? 'No data' : metrics.avg_latency_ms < 1000 ? 'Optimal' : metrics.avg_latency_ms < 3000 ? 'Acceptable' : 'Degraded'}
                 </div>
               </div>
             </div>
+            </div>
 
             {/* Terminal Logs */}
-            <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-dark)', border: '1px solid #333', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-              <div style={{ padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.05)', borderBottom: '1px solid #333', fontSize: '0.8rem', color: '#888', display: 'flex', justifyContent: 'space-between' }}>
+            <div className="surface-panel" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ padding: '0.75rem 1.5rem', background: 'var(--bg-dark)', borderBottom: '1px solid var(--border-medium)', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 500 }}>
                 <span>OpenClaw Core - Agent Execution Log</span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--success-color)' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--success-color)' }}></span> Connected</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: runnerActive ? 'var(--accent-color)' : 'var(--text-muted)' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: runnerActive ? 'var(--accent-color)' : 'var(--text-muted)' }}></span> 
+                  {runnerActive ? 'Connected' : 'Offline'}
+                </span>
               </div>
-              <div style={{ padding: '1rem', flex: 1, overflowY: 'auto', maxHeight: '300px', fontFamily: 'monospace', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <div style={{ padding: '1.5rem', flex: 1, overflowY: 'auto', fontFamily: 'monospace', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', background: '#0a0a0c' }}>
+                {logs.length === 0 && <div className="text-muted" style={{ fontStyle: 'italic' }}>Waiting for execution logs...</div>}
                 {logs.map((log, i) => (
-                  <div key={i} style={{ color: log.type === 'error' ? '#ff6b6b' : log.type === 'success' ? '#20c997' : '#a5b4fc', display: 'flex', gap: '1rem' }}>
-                    {log.time && <span style={{ color: '#666', minWidth: '80px' }}>[{log.time}]</span>}
+                  <div key={i} style={{ color: log.type === 'error' ? 'var(--danger-color)' : log.type === 'success' ? 'var(--accent-color)' : 'var(--primary-color)', display: 'flex', gap: '1rem', lineHeight: '1.5' }}>
+                    {log.time && <span style={{ color: 'var(--text-dim)', minWidth: '80px' }}>[{log.time}]</span>}
                     <span>{log.msg}</span>
                   </div>
                 ))}
@@ -444,39 +458,36 @@ const ObservabilityDashboard = ({ agentId }) => {
 
           </div>
         ) : activeTab === 'interactions' ? (
-          <div className="flex-col" style={{ gap: '1.5rem', height: '100%' }}>
-            <div className="glass-panel" style={{ padding: '1.25rem', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: 'var(--text-main)', fontSize: '1.1rem' }}>Recent Interactions</h3>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead>
+          <div className="flex-col" style={{ gap: '1.5rem', height: '100%', width: '100%', maxWidth: '1400px', margin: '0 auto' }}>
+            <div className="surface-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)' }}>
+                <h3 className="text-h3" style={{ margin: 0 }}>Recent Interactions</h3>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                  <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1 }}>
                     <tr style={{ borderBottom: '1px solid var(--border-medium)', color: 'var(--text-muted)', textAlign: 'left' }}>
-                      <th style={{ padding: '0.75rem 1rem' }}>Timestamp</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>Session ID</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>Channel</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>Sender</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>Message</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Timestamp</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Session ID</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Channel</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Sender</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Message</th>
                     </tr>
                   </thead>
                   <tbody>
                     {interactions.length === 0 ? (
-                      <tr><td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No interactions found</td></tr>
+                      <tr><td colSpan="5" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>No interactions found</td></tr>
                     ) : interactions.map((i, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(i.timestamp).toLocaleString()}</td>
-                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', color: 'var(--primary-color)' }}>{i.session_id ? i.session_id.substring(0, 8) + '...' : '-'}</td>
-                        <td style={{ padding: '0.75rem 1rem' }}>{i.channel}</td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <span style={{ 
-                            padding: '0.2rem 0.5rem', 
-                            borderRadius: '4px', 
-                            background: i.sender === 'user' ? 'rgba(56, 189, 248, 0.1)' : 'rgba(168, 85, 247, 0.1)',
-                            color: i.sender === 'user' ? '#38bdf8' : '#a855f7'
-                          }}>
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)', transition: 'var(--transition-fast)' }} className="hover:bg-surface-hover">
+                        <td style={{ padding: '1rem 1.5rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(i.timestamp).toLocaleString()}</td>
+                        <td style={{ padding: '1rem 1.5rem', fontFamily: 'monospace', color: 'var(--primary-color)' }}>{i.session_id ? i.session_id.substring(0, 8) + '...' : '-'}</td>
+                        <td style={{ padding: '1rem 1.5rem' }}>{i.channel}</td>
+                        <td style={{ padding: '1rem 1.5rem' }}>
+                          <span className={i.sender === 'user' ? 'badge badge-primary' : 'badge badge-secondary'}>
                             {i.sender}
                           </span>
                         </td>
-                        <td style={{ padding: '0.75rem 1rem', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.message}</td>
+                        <td style={{ padding: '1rem 1.5rem', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-main)' }}>{i.message}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -485,33 +496,35 @@ const ObservabilityDashboard = ({ agentId }) => {
             </div>
           </div>
         ) : activeTab === 'sessions' ? (
-          <div className="flex-col" style={{ gap: '1.5rem', height: '100%' }}>
-            <div className="glass-panel" style={{ padding: '1.25rem', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: 'var(--text-main)', fontSize: '1.1rem' }}>Active Sessions</h3>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead>
+          <div className="flex-col" style={{ gap: '1.5rem', height: '100%', width: '100%', maxWidth: '1400px', margin: '0 auto' }}>
+            <div className="surface-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)' }}>
+                <h3 className="text-h3" style={{ margin: 0 }}>Active Sessions</h3>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                  <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1 }}>
                     <tr style={{ borderBottom: '1px solid var(--border-medium)', color: 'var(--text-muted)', textAlign: 'left' }}>
-                      <th style={{ padding: '0.75rem 1rem' }}>Session ID</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>Last Active</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>Message Count</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Session ID</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Status</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Last Active</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Message Count</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sessions.length === 0 ? (
-                      <tr><td colSpan="4" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No active sessions</td></tr>
+                      <tr><td colSpan="4" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>No active sessions</td></tr>
                     ) : sessions.map((s, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', color: 'var(--primary-color)' }}>{s.session_id}</td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: s.active ? 'var(--success-color)' : 'var(--text-muted)' }}>
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: s.active ? 'var(--success-color)' : 'var(--text-muted)' }}></span>
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                        <td style={{ padding: '1rem 1.5rem', fontFamily: 'monospace', color: 'var(--primary-color)' }}>{s.session_id}</td>
+                        <td style={{ padding: '1rem 1.5rem' }}>
+                          <span className={s.active ? 'badge badge-accent' : 'badge badge-muted'}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor' }}></span>
                             {s.active ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)' }}>{s.last_active}</td>
-                        <td style={{ padding: '0.75rem 1rem' }}>{s.message_count}</td>
+                        <td style={{ padding: '1rem 1.5rem', color: 'var(--text-muted)' }}>{s.last_active}</td>
+                        <td style={{ padding: '1rem 1.5rem', color: 'var(--text-main)' }}>{s.message_count}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -520,32 +533,34 @@ const ObservabilityDashboard = ({ agentId }) => {
             </div>
           </div>
         ) : activeTab === 'syncs' ? (
-          <div className="flex-col" style={{ gap: '1.5rem', height: '100%' }}>
-            <div className="glass-panel" style={{ padding: '1.25rem', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: 'var(--text-main)', fontSize: '1.1rem' }}>Recent Graph Syncs</h3>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead>
+          <div className="flex-col" style={{ gap: '1.5rem', height: '100%', width: '100%', maxWidth: '1400px', margin: '0 auto' }}>
+            <div className="surface-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)' }}>
+                <h3 className="text-h3" style={{ margin: 0 }}>Recent Graph Syncs</h3>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                  <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1 }}>
                     <tr style={{ borderBottom: '1px solid var(--border-medium)', color: 'var(--text-muted)', textAlign: 'left' }}>
-                      <th style={{ padding: '0.75rem 1rem' }}>Source Node</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>Relationship</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>Target Node</th>
-                      <th style={{ padding: '0.75rem 1rem' }}>Graph ID</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Source Node</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Relationship</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Target Node</th>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Graph ID</th>
                     </tr>
                   </thead>
                   <tbody>
                     {syncs.length === 0 ? (
-                      <tr><td colSpan="4" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No sync events found</td></tr>
+                      <tr><td colSpan="4" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>No sync events found</td></tr>
                     ) : syncs.map((s, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--primary-light)' }}>{s.source}</td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <span style={{ padding: '0.2rem 0.5rem', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', fontSize: '0.75rem' }}>
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                        <td style={{ padding: '1rem 1.5rem', color: 'var(--primary-color)', fontWeight: 500 }}>{s.source}</td>
+                        <td style={{ padding: '1rem 1.5rem' }}>
+                          <span className="badge badge-muted">
                             {s.predicate}
                           </span>
                         </td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--primary-light)' }}>{s.target}</td>
-                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{s.graph_id}</td>
+                        <td style={{ padding: '1rem 1.5rem', color: 'var(--primary-color)', fontWeight: 500 }}>{s.target}</td>
+                        <td style={{ padding: '1rem 1.5rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{s.graph_id}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -553,7 +568,12 @@ const ObservabilityDashboard = ({ agentId }) => {
               </div>
             </div>
           </div>
+        ) : activeTab === 'reports' ? (
+          <div className="flex-col" style={{ gap: '1.5rem', height: '100%', width: '100%', maxWidth: '1400px', margin: '0 auto' }}>
+            <CustomReportsDashboard agentId={agentId} />
+          </div>
         ) : null}
+      </div>
       </div>
     </div>
   );

@@ -87,16 +87,12 @@ function CustomReportsDashboard({ agentId = 'global', isSidebarOpen, isAssistant
   };
 
   return (
-    <div className="glass-panel" style={{ 
-      height: 'calc(100vh - 120px)', 
-      position: 'relative', 
-      overflowY: 'auto',
-      overflowX: 'hidden',
-      paddingTop: '2rem',
-      paddingBottom: '2rem',
-      paddingLeft: isAssistantOpen ? '340px' : '2rem',
-      paddingRight: isSidebarOpen ? '420px' : '2rem',
-      transition: 'padding 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+    <div className="flex-col" style={{ 
+      gap: '1.5rem', 
+      height: '100%', 
+      width: '100%', 
+      maxWidth: '1400px', 
+      margin: '0 auto' 
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
