@@ -35,10 +35,13 @@ export default function CustomerChatWidget({ agentId }) {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}/agent/${agentId}/chat`, {
+      const formData = new FormData();
+      formData.append('agent_id', agentId);
+      if (userMessage) formData.append('message', userMessage);
+
+      const response = await fetch(`${API_BASE}/agent/${agentId}/unified_chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage })
+        body: formData
       });
 
       const data = await response.json();

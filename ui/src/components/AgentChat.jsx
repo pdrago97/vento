@@ -37,10 +37,11 @@ export default function AgentChat({ agentId, onUpdate }) {
 
     try {
       const formData = new FormData();
+      formData.append('agent_id', agentId);
       if (userMessage) formData.append('message', userMessage);
       if (fileToSend) formData.append('file', fileToSend);
 
-      const response = await fetch(`${API_BASE}/agent/${agentId}/chat`, {
+      const response = await fetch(`${API_BASE}/agent/${agentId}/unified_chat`, {
         method: 'POST',
         body: formData
       });

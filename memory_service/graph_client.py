@@ -208,7 +208,7 @@ class OpenClawGraph:
             self.graph.query("CREATE (:Class {id: 'Interaction', name: 'Interaction'})")
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
-    async def store_interaction(self, session_id: str, role: str, interaction_type: str, content: str, metadata: dict = None, user_id: str = None):
+    async def store_interaction(self, session_id: str, role: str, interaction_type: str, content: str, metadata: dict = None, user_id: str = None, user_name: str = None):
         import uuid
         import time
         interaction_id = f"int_{uuid.uuid4().hex[:8]}"
@@ -232,7 +232,8 @@ class OpenClawGraph:
         # Create Interaction node and link to User if user_id is provided
         q = """
         MERGE (u:Entity {id: $user_id})
-        ON CREATE SET u.name = $user_id
+        ON CREATE SET u.name = coalesce($user_name, $user_id)
+        SET u.name = coalesce($user_name, u.name, $user_id)
         CREATE (i:Interaction)
         SET i = $props
         CREATE (u)-[:ENGAGED_IN]->(i)
@@ -247,7 +248,11 @@ class OpenClawGraph:
         if not safe_user_id:
             safe_user_id = "unknown_user"
             
-        await asyncio.to_thread(self.graph.query, q, {'user_id': safe_user_id, 'props': props})
+        safe_user_name = user_name
+        if not safe_user_name and metadata and "user_name" in metadata:
+            safe_user_name = str(metadata["user_name"])
+            
+        await asyncio.to_thread(self.graph.query, q, {'user_id': safe_user_id, 'user_name': safe_user_name, 'props': props})
         return interaction_id
 
 graph_client = OpenClawGraph(graph_name='openclaw')

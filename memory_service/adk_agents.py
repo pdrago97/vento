@@ -60,6 +60,81 @@ async def save_memory_to_graph(agent_id: str, subject: str, predicate: str, obje
     )
     return f"Successfully saved memory: {subject} {predicate} {object_val}"
 
+async def save_semantic_memory(agent_id: str, subject_name: str, subject_class: str, predicate: str, object_name: str, object_class: str, properties_json: str = "{}"):
+    """
+    Stores a semantic memory fragment into the agent's knowledge graph, adhering to and expanding the ontology.
+    
+    Args:
+        agent_id: The ID of the agent (e.g. "commercial", "support").
+        subject_name: The name/ID of the subject (e.g. "naluartt").
+        subject_class: The ontology class of the subject (e.g. "User", "Company").
+        predicate: The relationship (e.g. "WORKS_AT", "HAS_ISSUE").
+        object_name: The name/ID of the object (e.g. "Vento", "Login Bug").
+        object_class: The ontology class of the object (e.g. "Software", "Bug").
+        properties_json: Additional properties for the edge or nodes as a JSON string.
+    """
+    print(f"[Tool] save_semantic_memory called with: {agent_id}, {subject_name}:{subject_class}, {predicate}, {object_name}:{object_class}")
+    client = get_schema_client(agent_id)
+    
+    try:
+        properties = json.loads(properties_json)
+    except Exception:
+        properties = {}
+        
+    # Check and Expand Ontology
+    from ontology_manager import ontology_manager
+    schema = ontology_manager.get_schema(agent_id)
+    expanded = False
+    
+    # Safe format
+    sub_class = "".join(c for c in subject_class if c.isalnum() or c == '_').capitalize()
+    obj_class = "".join(c for c in object_class if c.isalnum() or c == '_').capitalize()
+    pred_safe = "".join(c for c in predicate if c.isalnum() or c == '_').upper()
+    
+    if not sub_class: sub_class = "Entity"
+    if not obj_class: obj_class = "Entity"
+    if not pred_safe: pred_safe = "RELATED_TO"
+    
+    if sub_class not in schema.get("nodes", []):
+        schema.setdefault("nodes", []).append(sub_class)
+        expanded = True
+    if obj_class not in schema.get("nodes", []):
+        schema.setdefault("nodes", []).append(obj_class)
+        expanded = True
+    if pred_safe not in schema.get("predicates", []):
+        schema.setdefault("predicates", []).append(pred_safe)
+        expanded = True
+        
+    if expanded:
+        ontology_manager.save_schema(schema, agent_id)
+        
+    # Generate simple IDs
+    sub_id = subject_name.replace(" ", "_").lower()
+    obj_id = object_name.replace(" ", "_").lower()
+    
+    # Save Subject Node
+    await client.upsert_node(
+        node_id=sub_id,
+        label=sub_class,
+        properties={"name": subject_name}
+    )
+    
+    # Save Object Node
+    await client.upsert_node(
+        node_id=obj_id,
+        label=obj_class,
+        properties={"name": object_name}
+    )
+    
+    # Save Edge
+    await client.create_edge(
+        source_id=sub_id,
+        target_id=obj_id,
+        relation=pred_safe,
+        properties=properties
+    )
+    return f"Successfully saved semantic memory: ({subject_name}:{sub_class}) -[{pred_safe}]-> ({object_name}:{obj_class})"
+
 async def update_node_properties(agent_id: str, node_id: str, properties_json: str = "{}"):
     """
     Updates properties for an existing node in the agent's knowledge graph.
@@ -217,6 +292,7 @@ import os
 # Define available tools map (base tools)
 AVAILABLE_TOOLS = {
     "save_memory_to_graph": save_memory_to_graph,
+    "save_semantic_memory": save_semantic_memory,
     "update_node_properties": update_node_properties,
     "search_raw_history": search_raw_history,
     "search_knowledge_graph": search_knowledge_graph
@@ -229,13 +305,13 @@ def load_agents_config() -> dict:
         default_config = {
             "commercial": {
                 "name": "commercial",
-                "instruction": "You are an intelligent Commercial Agent. Your mission is to interact with users and understand their commercial needs, product interests, and company details. Automatically index this knowledge into your knowledge graph. Whenever you learn something new, use the 'save_memory_to_graph' tool to save it. If you need to update properties of an existing entity, use the 'update_node_properties' tool. Use the 'search_raw_history' tool to search through old documents or verbatim conversations. Use 'search_knowledge_graph' to retrieve your structured facts. The agent_id you must use for the tools is 'commercial'. Be concise, polite, and persuasive but helpful.",
-                "tools": ["save_memory_to_graph", "update_node_properties", "search_raw_history", "search_knowledge_graph"]
+                "instruction": "You are an intelligent Commercial Agent. Your mission is to interact with users and understand their commercial needs, product interests, and company details. Automatically index this knowledge into your knowledge graph. Whenever you learn something new, use the 'save_semantic_memory' tool to extract structured triplets using the provided Ontology. You may introduce new node classes and predicates if the current ontology does not fit. If you need to update properties of an existing entity, use the 'update_node_properties' tool. Use the 'search_raw_history' tool to search through old documents or verbatim conversations. Use 'search_knowledge_graph' to retrieve your structured facts. The agent_id you must use for the tools is 'commercial'. Be concise, polite, and persuasive but helpful.",
+                "tools": ["save_semantic_memory", "save_memory_to_graph", "update_node_properties", "search_raw_history", "search_knowledge_graph"]
             },
             "support": {
                 "name": "support",
-                "instruction": "You are an intelligent Support Agent. Your mission is to interact with users and understand their technical issues, bug reports, and feature requests. Automatically index this knowledge into your knowledge graph. Whenever you learn something new, use the 'save_memory_to_graph' tool to save it. If you need to update properties of an existing entity, use the 'update_node_properties' tool. Use the 'search_raw_history' tool to search through old documents or verbatim conversations. Use 'search_knowledge_graph' to retrieve your structured facts. The agent_id you must use for the tools is 'support'. Be concise, polite, and technical.",
-                "tools": ["save_memory_to_graph", "update_node_properties", "search_raw_history", "search_knowledge_graph"]
+                "instruction": "You are an intelligent Support Agent. Your mission is to interact with users and understand their technical issues, bug reports, and feature requests. Automatically index this knowledge into your knowledge graph. Whenever you learn something new, use the 'save_semantic_memory' tool to extract structured triplets using the provided Ontology. You may introduce new node classes and predicates if the current ontology does not fit. If you need to update properties of an existing entity, use the 'update_node_properties' tool. Use the 'search_raw_history' tool to search through old documents or verbatim conversations. Use 'search_knowledge_graph' to retrieve your structured facts. The agent_id you must use for the tools is 'support'. Be concise, polite, and technical.",
+                "tools": ["save_semantic_memory", "save_memory_to_graph", "update_node_properties", "search_raw_history", "search_knowledge_graph"]
             }
         }
         save_agents_config(default_config)
@@ -249,7 +325,7 @@ def load_agents_config() -> dict:
         migrated = False
         for aid, ainfo in config.items():
             current_tools = ainfo.get("tools", [])
-            for new_tool in ["search_raw_history", "search_knowledge_graph"]:
+            for new_tool in ["search_raw_history", "search_knowledge_graph", "save_semantic_memory"]:
                 if new_tool not in current_tools:
                     current_tools.append(new_tool)
                     migrated = True
@@ -313,7 +389,7 @@ def get_agent(agent_id: str, force_reload: bool = False) -> Agent:
         system_instruction = f"""
         You are an intelligent {agent_id} Agent.
         Your mission is to interact with users and automatically index knowledge and memory into your knowledge graph.
-        Whenever you learn something new and relevant to your mission, use the 'save_memory_to_graph' tool to save it.
+        Whenever you learn something new and relevant to your mission, use the 'save_semantic_memory' tool to extract structured triplets using the provided Ontology. You may introduce new node classes and predicates if the current ontology does not fit.
         If you need to update properties of an existing entity, use the 'update_node_properties' tool.
         Use the 'search_raw_history' tool to search through old documents or verbatim conversations.
         Use 'search_knowledge_graph' to retrieve your structured facts.
@@ -322,7 +398,7 @@ def get_agent(agent_id: str, force_reload: bool = False) -> Agent:
         config[agent_id] = {
             "name": agent_id,
             "instruction": system_instruction.strip(),
-            "tools": ["save_memory_to_graph", "update_node_properties", "search_raw_history", "search_knowledge_graph"]
+            "tools": ["save_semantic_memory", "save_memory_to_graph", "update_node_properties", "search_raw_history", "search_knowledge_graph"]
         }
         save_agents_config(config)
         
@@ -339,11 +415,16 @@ def get_agent(agent_id: str, force_reload: bool = False) -> Agent:
     for template in action_templates:
         dyn_tool = make_dynamic_tool(agent_id, template)
         tools_to_inject.append(dyn_tool)
+        
+    from ontology_manager import ontology_manager
+    schema = ontology_manager.get_schema(agent_id)
+    base_instruction = agent_info.get("instruction", "")
+    injected_instruction = base_instruction + f"\n\n--- DYNAMIC CONTEXT ---\nCURRENT ONTOLOGY:\nNodes: {schema.get('nodes', [])}\nPredicates: {schema.get('predicates', [])}\n\nUse 'save_semantic_memory' to extract facts. Use the classes and predicates above, or invent new ones if they don't adequately represent the knowledge."
             
     agent = Agent(
         name=f"{agent_id}_agent",
         model="gemini-2.0-flash",
-        instruction=agent_info.get("instruction", ""),
+        instruction=injected_instruction,
         tools=tools_to_inject
     )
     

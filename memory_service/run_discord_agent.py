@@ -170,8 +170,9 @@ def start_discord_agent(agent_id: str):
                             "user",
                             "discord_message",
                             user_text,
-                            metadata={"channel": "discord", "user_id": str(message.author.id)},
-                            user_id=str(message.author.id)
+                            metadata={"channel": "discord", "user_id": str(message.author.id), "user_name": str(message.author.name)},
+                            user_id=str(message.author.id),
+                            user_name=str(message.author.name)
                         )
                         
                         # Log bot response
@@ -188,6 +189,7 @@ def start_discord_agent(agent_id: str):
                             metadata = {}
                         metadata["channel"] = "discord"
                         metadata["user_id"] = str(message.author.id)
+                        metadata["user_name"] = str(message.author.name)
 
                         await graph_client_instance.store_interaction(
                             session_id,
@@ -195,7 +197,8 @@ def start_discord_agent(agent_id: str):
                             "discord_response",
                             response_text,
                             metadata=metadata,
-                            user_id=str(message.author.id)
+                            user_id=str(message.author.id),
+                            user_name=str(message.author.name)
                         )
                     except Exception as e:
                         print(f"Erro ao logar interação no history.db ou grafo: {e}")
