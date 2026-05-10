@@ -26,6 +26,17 @@ from ontology_manager import ontology_manager
 from adk_agents import get_agent
 from document_ingestion import extract_text_from_file, analyze_document_for_ontology, chat_multimodal_ontology, chat_multimodal_memory, chat_multimodal_admin
 from history_db import log_interaction, search_history, save_report, get_reports, delete_report
+import asyncio
+
+async def log_and_store_interaction(agent_id, session_id, role, content_type, content, **kwargs):
+    log_interaction(agent_id, session_id, role, content_type, content, **kwargs)
+    try:
+        meta = kwargs.get("metadata") or {}
+        if "file_path" in kwargs:
+            meta["file_path"] = kwargs["file_path"]
+        await get_schema_client(agent_id).store_interaction(session_id, role, content_type, content, metadata=meta)
+    except Exception as e:
+        print(f"Error storing interaction in graph: {e}")
 
 app = FastAPI(title="OpenClaw Memory Service")
 
@@ -451,6 +462,52 @@ Do not include any markdown formatting like ```json.
         return {"status": "error", "message": str(e)}
 
 
+class CurateInsightsPayload(BaseModel):
+    interactions: list[dict]
+
+@app.post("/agent/{agent_id}/curate_insights")
+async def curate_insights(agent_id: str, payload: CurateInsightsPayload):
+    if not client:
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+        
+    prompt = f"""You are a Knowledge Graph Curator for the agent '{agent_id}'. 
+You are provided with a list of recent interactions. Your task is to extract meaningful insights, facts, or preferences from these interactions and suggest them as structural graph updates.
+
+Interactions:
+{json.dumps(payload.interactions, indent=2)}
+
+Return a JSON object suggesting nodes and relationships to add or update in the knowledge graph. 
+Format exactly like this (do not include markdown formatting like ```json):
+{{
+  "nodes": [
+    {{"label": "User", "properties": {{"name": "Alice", "preference": "dark mode"}}}},
+    {{"label": "Issue", "properties": {{"status": "resolved", "description": "Login error"}}}}
+  ],
+  "relationships": [
+    {{"source_label": "User", "source_props": {{"name": "Alice"}}, "target_label": "Issue", "target_props": {{"description": "Login error"}}, "type": "REPORTED"}}
+  ]
+}}
+"""
+    try:
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model='gemini-3.1-flash-lite',
+            contents=prompt
+        )
+        
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+            
+        suggestions = json.loads(text.strip())
+        return {"status": "success", "suggestions": suggestions}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
 from fastapi import Form
 @app.post("/ontology/chat_multimodal")
 async def chat_multimodal(agent_id: str = Form("global"), message: str = Form(None), file: UploadFile = File(None)):
@@ -475,15 +532,15 @@ async def chat_multimodal(agent_id: str = Form("global"), message: str = Form(No
                 
             text = extract_text_from_file(filename, file_bytes)
             # Log document
-            log_interaction(agent_id, "multimodal_session", "user", "document", text, file_path=filename)
+            await log_and_store_interaction(agent_id, "multimodal_session", "user", "document", text, file_path=filename)
             
         if message:
-            log_interaction(agent_id, "multimodal_session", "user", "message", message)
+            await log_and_store_interaction(agent_id, "multimodal_session", "user", "message", message)
             
         result = await chat_multimodal_ontology(temp_filepath, filename, text, schema, message or "")
         
         # Log assistant suggestion
-        log_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
+        await log_and_store_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
         
         return {"status": "success", "result": result}
     except Exception as e:
@@ -510,7 +567,7 @@ async def ingest_document(agent_id: str, file: UploadFile = File(...)):
         text = extract_text_from_file(file.filename, file_bytes)
         
         # Log the full document for needle-in-the-haystack search
-        log_interaction(agent_id, "ingestion_session", "user", "document", text, file_path=file.filename)
+        await log_and_store_interaction(agent_id, "ingestion_session", "user", "document", text, file_path=file.filename)
 
         current_schema = ontology_manager.get_schema(agent_id)
         
@@ -572,17 +629,17 @@ async def chat_agent(agent_id: str, message: str = Form(None), file: UploadFile 
                 f.write(file_bytes)
                 
             text = extract_text_from_file(filename, file_bytes)
-            log_interaction(agent_id, "multimodal_session", "user", "document", text, file_path=filename)
+            await log_and_store_interaction(agent_id, "multimodal_session", "user", "document", text, file_path=filename)
             
         if message:
-            log_interaction(agent_id, "multimodal_session", "user", "message", message)
+            await log_and_store_interaction(agent_id, "multimodal_session", "user", "message", message)
             
         # Get some current context if necessary, or pass empty dict
         current_graph_context = {}
         
         result = await chat_multimodal_memory(temp_filepath, filename, text, current_graph_context, message or "")
         
-        log_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
+        await log_and_store_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
         
         latency_ms = int((time.time() - start_time) * 1000)
         agent_latencies[agent_id].append(latency_ms)
@@ -715,7 +772,11 @@ Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
             runner = Runner(agent=admin_agent, app_name="vento", session_service=global_session_service)
             session_id = f"session_admin_{agent_id}"
             
-            log_interaction(agent_id, session_id, "user", "message", message or "Hello", metadata={"channel": "internal_ui"})
+            session = await global_session_service.get_session(app_name="vento", user_id="default", session_id=session_id)
+            if session is None:
+                await global_session_service.create_session(app_name="vento", user_id="default", session_id=session_id)
+            
+            await log_and_store_interaction(agent_id, session_id, "user", "message", message or "Hello", metadata={"channel": "internal_ui"})
             
             msg = types.Content(role="user", parts=[types.Part.from_text(text=message or "Hello")])
             metadata = {"channel": "internal_ui", "tokens": 0, "reasoning": "", "tool_calls": [], "tool_outputs": []}
@@ -739,7 +800,7 @@ Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
                 elif hasattr(event, "text") and event.text:
                     result_response += event.text
             
-            log_interaction(agent_id, session_id, "assistant", "message", result_response, metadata=metadata)
+            await log_and_store_interaction(agent_id, session_id, "assistant", "message", result_response, metadata=metadata)
             
         else:
             # Standard agent
@@ -754,7 +815,11 @@ Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
             runner = Runner(agent=agent, app_name="vento", session_service=global_session_service)
             session_id = f"session_{agent_id}"
             
-            log_interaction(agent_id, session_id, "user", "message", message or "Hello", metadata={"channel": "internal_ui"})
+            session = await global_session_service.get_session(app_name="vento", user_id="default", session_id=session_id)
+            if session is None:
+                await global_session_service.create_session(app_name="vento", user_id="default", session_id=session_id)
+            
+            await log_and_store_interaction(agent_id, session_id, "user", "message", message or "Hello", metadata={"channel": "internal_ui"})
             
             msg = types.Content(role="user", parts=[types.Part.from_text(text=message or "Hello")])
             metadata = {"channel": "internal_ui", "tokens": 0, "reasoning": "", "tool_calls": [], "tool_outputs": []}
@@ -778,7 +843,7 @@ Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
                 elif hasattr(event, "text") and event.text:
                     result_response += event.text
             
-            log_interaction(agent_id, session_id, "assistant", "message", result_response, metadata=metadata)
+            await log_and_store_interaction(agent_id, session_id, "assistant", "message", result_response, metadata=metadata)
         latency_ms = int((time.time() - start_time) * 1000)
         agent_latencies[agent_id].append(latency_ms)
 
@@ -816,16 +881,16 @@ async def admin_chat_agent(agent_id: str, message: str = Form(None), file: Uploa
                 f.write(file_bytes)
                 
             text = extract_text_from_file(filename, file_bytes)
-            log_interaction(agent_id, "multimodal_session", "user", "document", text, file_path=filename)
+            await log_and_store_interaction(agent_id, "multimodal_session", "user", "document", text, file_path=filename)
             
         if message:
-            log_interaction(agent_id, "multimodal_session", "user", "message", message)
+            await log_and_store_interaction(agent_id, "multimodal_session", "user", "message", message)
             
         current_inventory_context = {}
         
         result = await chat_multimodal_admin(temp_filepath, filename, text, current_inventory_context, message or "")
         
-        log_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
+        await log_and_store_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
         
         latency_ms = int((time.time() - start_time) * 1000)
         agent_latencies[agent_id].append(latency_ms)

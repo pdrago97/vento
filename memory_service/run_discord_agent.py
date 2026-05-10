@@ -91,6 +91,10 @@ def start_discord_agent(agent_id: str):
                     bot_mention_text = f"@{client.user.name}"
                     user_text = user_text.replace(bot_mention_text, "").strip()
                     
+                    # Injeta contexto do usuário na mensagem para o LLM saber quem é
+                    context_prefix = f"[System Info: User's name is '{message.author.name}' and user_id is '{message.author.id}']\n"
+                    enriched_text = context_prefix + user_text
+                    
                     # 5. O PONTO CHAVE: Passa a mensagem para o OpenClaw (que pode usar o FalkorDB)
                     # Como agent.run não existe mais, usamos o Runner do ADK
                     from google.adk import Runner
@@ -116,7 +120,7 @@ def start_discord_agent(agent_id: str):
                             session_id=session_id
                         )
                     
-                    msg = types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
+                    msg = types.Content(role="user", parts=[types.Part.from_text(text=enriched_text)])
                     response_text = ""
                     metadata = {"channel": "discord", "tokens": 0, "reasoning": "", "tool_calls": [], "tool_outputs": []}
                     
@@ -146,8 +150,11 @@ def start_discord_agent(agent_id: str):
                     # Envia a resposta final (depois que o LLM usou as ferramentas e gerou o texto)
                     await message.channel.send(response_text)
                     
-                    # Log da interação no banco
+                    # Log da interação no banco e no grafo
                     try:
+                        from graph_client import get_schema_client
+                        graph_client_instance = get_schema_client(agent_id)
+                        
                         # Log user message
                         await asyncio.to_thread(
                             log_interaction,
@@ -158,6 +165,15 @@ def start_discord_agent(agent_id: str):
                             user_text,
                             metadata={"channel": "discord"}
                         )
+                        await graph_client_instance.store_interaction(
+                            session_id,
+                            "user",
+                            "discord_message",
+                            user_text,
+                            metadata={"channel": "discord", "user_id": str(message.author.id)},
+                            user_id=str(message.author.id)
+                        )
+                        
                         # Log bot response
                         await asyncio.to_thread(
                             log_interaction,
@@ -168,8 +184,21 @@ def start_discord_agent(agent_id: str):
                             response_text,
                             metadata=metadata
                         )
+                        if not metadata:
+                            metadata = {}
+                        metadata["channel"] = "discord"
+                        metadata["user_id"] = str(message.author.id)
+
+                        await graph_client_instance.store_interaction(
+                            session_id,
+                            "assistant",
+                            "discord_response",
+                            response_text,
+                            metadata=metadata,
+                            user_id=str(message.author.id)
+                        )
                     except Exception as e:
-                        print(f"Erro ao logar interação no history.db: {e}")
+                        print(f"Erro ao logar interação no history.db ou grafo: {e}")
 
                 except Exception as e:
                     print(f"Erro ao processar mensagem: {e}")

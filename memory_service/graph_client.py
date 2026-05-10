@@ -205,6 +205,50 @@ class OpenClawGraph:
             self.graph.query("CREATE (:Class {id: 'User', name: 'User'})")
             self.graph.query("CREATE (:Class {id: 'Entity', name: 'Entity'})")
             self.graph.query("CREATE (:Class {id: 'Fact', name: 'Fact'})")
+            self.graph.query("CREATE (:Class {id: 'Interaction', name: 'Interaction'})")
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
+    async def store_interaction(self, session_id: str, role: str, interaction_type: str, content: str, metadata: dict = None, user_id: str = None):
+        import uuid
+        import time
+        interaction_id = f"int_{uuid.uuid4().hex[:8]}"
+        
+        props = {
+            "id": interaction_id,
+            "session_id": session_id,
+            "role": role,
+            "type": interaction_type,
+            "content": content,
+            "timestamp": time.time()
+        }
+        
+        if metadata:
+            for k, v in metadata.items():
+                if isinstance(v, (str, int, float, bool)):
+                    props[k] = v
+                else:
+                    props[k] = str(v)
+                    
+        # Create Interaction node and link to User if user_id is provided
+        q = """
+        MERGE (u:Entity {id: $user_id})
+        ON CREATE SET u.name = $user_id
+        CREATE (i:Interaction)
+        SET i = $props
+        CREATE (u)-[:ENGAGED_IN]->(i)
+        RETURN i
+        """
+        safe_user_id = "unknown_user"
+        if user_id:
+            safe_user_id = "".join(c for c in user_id if c.isalnum() or c == '_').lower()
+        elif metadata and "user_id" in metadata:
+            safe_user_id = "".join(c for c in str(metadata["user_id"]) if c.isalnum() or c == '_').lower()
+            
+        if not safe_user_id:
+            safe_user_id = "unknown_user"
+            
+        await asyncio.to_thread(self.graph.query, q, {'user_id': safe_user_id, 'props': props})
+        return interaction_id
 
 graph_client = OpenClawGraph(graph_name='openclaw')
 

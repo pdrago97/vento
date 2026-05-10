@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
-import { Activity, MessageSquare, Zap, Terminal, RefreshCw, Key, Link2, CheckCircle2, Play, Square, HelpCircle, FileText, X } from 'lucide-react';
+import { Activity, MessageSquare, Zap, Terminal, RefreshCw, Key, Link2, CheckCircle2, Play, Square, HelpCircle, FileText, X, Sparkles } from 'lucide-react';
 import CustomReportsDashboard from './CustomReportsDashboard';
+import InsightsCurationModal from './InsightsCurationModal';
 
 const ObservabilityDashboard = ({ agentId, onClose }) => {
   const [activeTab, setActiveTab] = useState('channels');
@@ -41,6 +42,17 @@ const ObservabilityDashboard = ({ agentId, onClose }) => {
     sync_events: 0,
     avg_latency_ms: 0
   });
+
+  const [selectedInteractions, setSelectedInteractions] = useState(new Set());
+  const [showCurationModal, setShowCurationModal] = useState(false);
+
+  const toggleInteractionSelection = (idx, e) => {
+    e.stopPropagation();
+    const next = new Set(selectedInteractions);
+    if (next.has(idx)) next.delete(idx);
+    else next.add(idx);
+    setSelectedInteractions(next);
+  };
 
   // Data endpoints state
   const [interactions, setInteractions] = useState([]);
@@ -472,14 +484,24 @@ const ObservabilityDashboard = ({ agentId, onClose }) => {
         ) : activeTab === 'interactions' ? (
           <div className="flex-col" style={{ gap: '1.5rem', height: '100%', width: '100%', maxWidth: '1400px', margin: '0 auto' }}>
             <div className="surface-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)' }}>
+              <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 className="text-h3" style={{ margin: 0 }}>Recent Interactions</h3>
+                {selectedInteractions.size > 0 && (
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={() => setShowCurationModal(true)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                  >
+                    <Sparkles size={16} /> Curate Insights ({selectedInteractions.size})
+                  </button>
+                )}
               </div>
               <div style={{ flex: 1, overflow: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                   <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1 }}>
                     <tr style={{ borderBottom: '1px solid var(--border-medium)', color: 'var(--text-muted)', textAlign: 'left' }}>
                       <th style={{ padding: '1rem 1.5rem', fontWeight: 500, width: '40px' }}></th>
+                      <th style={{ padding: '1rem 0.5rem', fontWeight: 500, width: '40px' }}></th>
                       <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Timestamp</th>
                       <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Session ID</th>
                       <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Channel</th>
@@ -489,7 +511,7 @@ const ObservabilityDashboard = ({ agentId, onClose }) => {
                   </thead>
                   <tbody>
                     {interactions.length === 0 ? (
-                      <tr><td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>No interactions found</td></tr>
+                      <tr><td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>No interactions found</td></tr>
                     ) : interactions.map((i, idx) => {
                       const isExpanded = expandedRows.has(idx);
                       const channel = i.metadata?.channel || '-';
@@ -517,6 +539,14 @@ const ObservabilityDashboard = ({ agentId, onClose }) => {
                                 ▶
                               </span>
                             </td>
+                            <td style={{ padding: '1rem 0.5rem' }} onClick={(e) => e.stopPropagation()}>
+                              <input 
+                                type="checkbox" 
+                                checked={selectedInteractions.has(idx)}
+                                onChange={(e) => toggleInteractionSelection(idx, e)}
+                                style={{ cursor: 'pointer' }}
+                              />
+                            </td>
                             <td style={{ padding: '1rem 1.5rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(i.timestamp).toLocaleString()}</td>
                             <td style={{ padding: '1rem 1.5rem', fontFamily: 'monospace', color: 'var(--primary-color)' }}>{i.session_id ? i.session_id.substring(0, 8) + '...' : '-'}</td>
                             <td style={{ padding: '1rem 1.5rem' }}>
@@ -531,7 +561,7 @@ const ObservabilityDashboard = ({ agentId, onClose }) => {
                           </tr>
                           {isExpanded && (
                             <tr style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-card-raised)' }}>
-                              <td colSpan="6" style={{ padding: '0 1.5rem 1.5rem 4.5rem' }}>
+                              <td colSpan="7" style={{ padding: '0 1.5rem 1.5rem 4.5rem' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                   
                                   {tokens && (
@@ -679,6 +709,20 @@ const ObservabilityDashboard = ({ agentId, onClose }) => {
         ) : null}
       </div>
       </div>
+      
+      {showCurationModal && (
+        <InsightsCurationModal
+          isOpen={showCurationModal}
+          onClose={(success) => {
+            setShowCurationModal(false);
+            if (success === true) {
+              setSelectedInteractions(new Set());
+            }
+          }}
+          agentId={agentId}
+          selectedInteractions={Array.from(selectedInteractions).map(idx => interactions[idx])}
+        />
+      )}
     </div>
   );
 };
