@@ -15,7 +15,8 @@ class OpenClawGraph:
         try:
             self.graph.query("CREATE VECTOR INDEX FOR (f:Fact) ON (f.embedding) OPTIONS {dimension: 3072, similarityFunction: 'cosine'}")
         except Exception as e:
-            print(f"Error creating vector index: {e}")
+            if "already indexed" not in str(e):
+                print(f"Error creating vector index: {e}")
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
     async def store_fact(self, user_id: str, subject: str, predicate: str, object_val: str, timestamp: float, source_channel: str):

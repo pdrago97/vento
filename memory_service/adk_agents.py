@@ -143,21 +143,35 @@ import uuid
 import time
 import inspect
 
-def make_dynamic_tool(action_def: dict):
+def bind_base_tool(agent_id: str, func_name: str, func_ref):
+    import inspect
+    sig = inspect.signature(func_ref)
+    new_params = [p for p in sig.parameters.values() if p.name != 'agent_id']
+    args_str = ", ".join([f"{p.name}: {p.annotation.__name__ if hasattr(p.annotation, '__name__') else 'str'} = {repr(p.default)}" if p.default != inspect.Parameter.empty else f"{p.name}: {p.annotation.__name__ if hasattr(p.annotation, '__name__') else 'str'}" for p in new_params])
+    pass_args = ", ".join([f"{p.name}={p.name}" for p in new_params])
+    
+    is_async = inspect.iscoroutinefunction(func_ref)
+    def_type = "async def" if is_async else "def"
+    await_str = "await " if is_async else ""
+    
+    func_code = f"""
+{def_type} {func_name}({args_str}):
+    '''{func_ref.__doc__}'''
+    return {await_str}func_ref(agent_id={repr(agent_id)}{', ' + pass_args if pass_args else ''})
+"""
+    namespace = {'func_ref': func_ref}
+    exec(func_code, globals(), namespace)
+    return namespace[func_name]
+
+def make_dynamic_tool(agent_id: str, action_def: dict):
     tool_name = action_def["tool_name"]
     description = action_def.get("description", "")
     parameters = action_def.get("parameters", {})
     cypher_query = action_def["cypher_query"]
     success_message = action_def.get("success_message", "Success")
 
-    args_str = ", ".join([f"{k}: str" for k in parameters.keys()])
-    if "agent_id" not in parameters:
-        if args_str:
-            args_str = "agent_id: str, " + args_str
-        else:
-            args_str = "agent_id: str"
-
-    params_str = ", ".join([f"'{k}': {k}" for k in parameters.keys()])
+    args_str = ", ".join([f"{k}: str" for k in parameters.keys() if k != 'agent_id'])
+    params_str = ", ".join([f"'{k}': {k}" for k in parameters.keys() if k != 'agent_id'])
     
     func_code = f"""
 async def {tool_name}({args_str}):
@@ -168,14 +182,17 @@ async def {tool_name}({args_str}):
     import uuid
     import time
     import asyncio
-    print(f"[Dynamic Tool] {tool_name} called with agent_id={{agent_id}}")
-    client = get_schema_client(agent_id)
+    
+    _bound_agent_id = {repr(agent_id)}
+    print(f"[Dynamic Tool] {tool_name} called with agent_id={{_bound_agent_id}}")
+    client = get_schema_client(_bound_agent_id)
     
     query_params = {{{params_str}}}
     
     # Inject automatic variables that can be used in cypher
     query_params['__id'] = uuid.uuid4().hex[:8]
     query_params['__timestamp'] = time.time()
+    query_params['user_id'] = query_params.get('user_id', '') # safe default
     
     try:
         res = await asyncio.to_thread(client.graph.query, {repr(cypher_query)}, query_params)
@@ -299,7 +316,6 @@ def get_agent(agent_id: str, force_reload: bool = False) -> Agent:
         If you need to update properties of an existing entity, use the 'update_node_properties' tool.
         Use the 'search_raw_history' tool to search through old documents or verbatim conversations.
         Use 'search_knowledge_graph' to retrieve your structured facts.
-        The agent_id you must use for the tools is '{agent_id}'.
         Be concise, polite, and helpful.
         """
         config[agent_id] = {
@@ -314,12 +330,13 @@ def get_agent(agent_id: str, force_reload: bool = False) -> Agent:
     tools_to_inject = []
     for t_name in agent_info.get("tools", []):
         if t_name in AVAILABLE_TOOLS:
-            tools_to_inject.append(AVAILABLE_TOOLS[t_name])
+            bound_tool = bind_base_tool(agent_id, t_name, AVAILABLE_TOOLS[t_name])
+            tools_to_inject.append(bound_tool)
             
     # Inject dynamic tools from action_templates
     action_templates = agent_info.get("action_templates", [])
     for template in action_templates:
-        dyn_tool = make_dynamic_tool(template)
+        dyn_tool = make_dynamic_tool(agent_id, template)
         tools_to_inject.append(dyn_tool)
             
     agent = Agent(

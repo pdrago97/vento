@@ -53,7 +53,6 @@ function App() {
   const [agentsList, setAgentsList] = useState(['global']);
   const [schemasList, setSchemasList] = useState(['global']);
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
-  const [isObservabilityOpen, setIsObservabilityOpen] = useState(false);
 
   // Input states
   const [newNode, setNewNode] = useState('');
@@ -288,13 +287,6 @@ function App() {
             </select>
             {loading && <Database className="animate-spin text-primary" size={16} />}
             <button 
-              onClick={() => setIsObservabilityOpen(true)}
-              className="btn btn-secondary btn-sm"
-              disabled={agentId === 'global'}
-            >
-              <Activity size={14} /> Channels & Observability
-            </button>
-            <button 
               onClick={() => setIsBuilderOpen(true)}
               className="btn btn-secondary btn-sm"
             >
@@ -329,6 +321,10 @@ function App() {
               agentId={agentId} 
               isSidebarOpen={false} 
               isAssistantOpen={isAssistantOpen}
+            />
+          ) : viewMode === 'observability' ? (
+            <ObservabilityDashboard 
+              agentId={agentId} 
             />
           ) : (
             <GraphExplorer 
@@ -375,6 +371,12 @@ function App() {
             >
               Custom Reports
             </button>
+            <button 
+              className={`sidebar-tab ${activeTab === 'observability' ? 'active' : ''}`}
+              onClick={() => setActiveTab('observability')}
+            >
+              Observability
+            </button>
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeTab === 'schema' ? (
@@ -393,6 +395,10 @@ function App() {
               <InventoryExplorer agentId={agentId} />
             ) : activeTab === 'reports' ? (
               <CustomReportsDashboard agentId={agentId} />
+            ) : activeTab === 'observability' ? (
+              <div style={{ padding: '1rem', color: 'var(--text-muted)' }}>
+                Select an agent from the top bar to view its observability metrics, interactions, sessions, and sync events.
+              </div>
             ) : activeTab === 'memory' ? (
               <AgentChat agentId={agentId} onUpdate={() => setRefreshGraph(prev => prev + 1)} />
             ) : (
@@ -429,13 +435,6 @@ function App() {
           setExtractedFacts={setExtractedFacts}
           applyIngestionUpdates={applyIngestionUpdates}
           showNotification={showNotification}
-        />
-      )}
-
-      {isObservabilityOpen && (
-        <ObservabilityDashboard 
-          onClose={() => setIsObservabilityOpen(false)}
-          agentId={agentId}
         />
       )}
 
