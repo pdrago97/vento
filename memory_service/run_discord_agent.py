@@ -118,8 +118,19 @@ def start_discord_agent(agent_id: str):
                     
                     msg = types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
                     response_text = ""
+                    metadata = {"channel": "discord", "tokens": 0, "reasoning": "", "tool_calls": [], "tool_outputs": []}
                     
                     async for event in runner.run_async(user_id=str(message.author.id), session_id=session_id, new_message=msg):
+                        if getattr(event, "prompt_tokens", None):
+                            metadata["tokens"] = event.prompt_tokens
+                        if getattr(event, "reasoning", None) and event.reasoning:
+                            metadata["reasoning"] += event.reasoning + "\n"
+                        if getattr(event, "tool_calls", None) and event.tool_calls:
+                            for tc in event.tool_calls:
+                                metadata["tool_calls"].append({"name": getattr(tc, "name", str(tc)), "args": str(getattr(tc, "args", ""))})
+                        if getattr(event, "tool_outputs", None) and event.tool_outputs:
+                            metadata["tool_outputs"].append(str(event.tool_outputs))
+                            
                         if hasattr(event, "content") and event.content is not None:
                             if hasattr(event.content, "parts"):
                                 for part in event.content.parts:
@@ -144,7 +155,8 @@ def start_discord_agent(agent_id: str):
                             session_id,
                             "user",
                             "discord_message",
-                            user_text
+                            user_text,
+                            metadata={"channel": "discord"}
                         )
                         # Log bot response
                         await asyncio.to_thread(
@@ -153,7 +165,8 @@ def start_discord_agent(agent_id: str):
                             session_id,
                             "assistant",
                             "discord_response",
-                            response_text
+                            response_text,
+                            metadata=metadata
                         )
                     except Exception as e:
                         print(f"Erro ao logar interação no history.db: {e}")

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { Activity, MessageSquare, Zap, Terminal, RefreshCw, Key, Link2, CheckCircle2, Play, Square, HelpCircle, FileText, X } from 'lucide-react';
 import CustomReportsDashboard from './CustomReportsDashboard';
 
@@ -46,6 +46,18 @@ const ObservabilityDashboard = ({ agentId, onClose }) => {
   const [interactions, setInteractions] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [syncs, setSyncs] = useState([]);
+  const [expandedRows, setExpandedRows] = useState(new Set());
+
+  const toggleRow = (idx) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(idx)) {
+      newExpanded.delete(idx);
+    } else {
+      newExpanded.add(idx);
+    }
+    setExpandedRows(newExpanded);
+  };
+
 
   // Fetch tabular data based on active tab
   useEffect(() => {
@@ -162,7 +174,7 @@ const ObservabilityDashboard = ({ agentId, onClose }) => {
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-      <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-medium)', borderRadius: '12px', width: '90vw', height: '90vh', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-medium)', borderRadius: '12px', width: '90vw', height: '90vh', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header & Tabs */}
         <div style={{ padding: '1.5rem 2rem 0', borderBottom: '1px solid var(--border-medium)', display: 'flex', flexDirection: 'column', gap: '1.5rem', background: 'var(--bg-glass)' }}>
           <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -467,6 +479,7 @@ const ObservabilityDashboard = ({ agentId, onClose }) => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                   <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1 }}>
                     <tr style={{ borderBottom: '1px solid var(--border-medium)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                      <th style={{ padding: '1rem 1.5rem', fontWeight: 500, width: '40px' }}></th>
                       <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Timestamp</th>
                       <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Session ID</th>
                       <th style={{ padding: '1rem 1.5rem', fontWeight: 500 }}>Channel</th>
@@ -476,20 +489,111 @@ const ObservabilityDashboard = ({ agentId, onClose }) => {
                   </thead>
                   <tbody>
                     {interactions.length === 0 ? (
-                      <tr><td colSpan="5" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>No interactions found</td></tr>
-                    ) : interactions.map((i, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)', transition: 'var(--transition-fast)' }} className="hover:bg-surface-hover">
-                        <td style={{ padding: '1rem 1.5rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(i.timestamp).toLocaleString()}</td>
-                        <td style={{ padding: '1rem 1.5rem', fontFamily: 'monospace', color: 'var(--primary-color)' }}>{i.session_id ? i.session_id.substring(0, 8) + '...' : '-'}</td>
-                        <td style={{ padding: '1rem 1.5rem' }}>{i.channel}</td>
-                        <td style={{ padding: '1rem 1.5rem' }}>
-                          <span className={i.sender === 'user' ? 'badge badge-primary' : 'badge badge-secondary'}>
-                            {i.sender}
-                          </span>
-                        </td>
-                        <td style={{ padding: '1rem 1.5rem', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-main)' }}>{i.message}</td>
-                      </tr>
-                    ))}
+                      <tr><td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>No interactions found</td></tr>
+                    ) : interactions.map((i, idx) => {
+                      const isExpanded = expandedRows.has(idx);
+                      const channel = i.metadata?.channel || '-';
+                      const tokens = i.metadata?.tokens || null;
+                      const reasoning = i.metadata?.reasoning || null;
+                      const toolCalls = i.metadata?.tool_calls || [];
+                      
+                      return (
+                        <React.Fragment key={idx}>
+                          <tr 
+                            onClick={() => toggleRow(idx)}
+                            style={{ 
+                              borderBottom: isExpanded ? 'none' : '1px solid var(--border-light)', 
+                              transition: 'var(--transition-fast)',
+                              cursor: 'pointer'
+                            }} 
+                            className="hover:bg-surface-hover"
+                          >
+                            <td style={{ padding: '1rem 1.5rem', color: 'var(--text-muted)' }}>
+                              <span style={{ 
+                                display: 'inline-block', 
+                                transition: 'transform 0.2s', 
+                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' 
+                              }}>
+                                ▶
+                              </span>
+                            </td>
+                            <td style={{ padding: '1rem 1.5rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(i.timestamp).toLocaleString()}</td>
+                            <td style={{ padding: '1rem 1.5rem', fontFamily: 'monospace', color: 'var(--primary-color)' }}>{i.session_id ? i.session_id.substring(0, 8) + '...' : '-'}</td>
+                            <td style={{ padding: '1rem 1.5rem' }}>
+                              <span className={`badge badge-outline`}>{channel}</span>
+                            </td>
+                            <td style={{ padding: '1rem 1.5rem' }}>
+                              <span className={i.role === 'user' ? 'badge badge-primary' : 'badge badge-secondary'}>
+                                {i.role || i.sender}
+                              </span>
+                            </td>
+                            <td style={{ padding: '1rem 1.5rem', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-main)' }}>{i.content || i.message}</td>
+                          </tr>
+                          {isExpanded && (
+                            <tr style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-card-raised)' }}>
+                              <td colSpan="6" style={{ padding: '0 1.5rem 1.5rem 4.5rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                  
+                                  {tokens && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                      <Zap size={14} />
+                                      <span>Token Usage: <strong>{tokens}</strong></span>
+                                    </div>
+                                  )}
+
+                                  {reasoning && (
+                                    <div style={{ background: 'var(--bg-main)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-medium)', position: 'relative' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                        <h4 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Agent Reasoning</h4>
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            navigator.clipboard.writeText(reasoning);
+                                          }}
+                                          className="btn btn-secondary btn-sm"
+                                          style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                        >
+                                          Copy
+                                        </button>
+                                      </div>
+                                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                                        {reasoning}
+                                      </pre>
+                                    </div>
+                                  )}
+
+                                  {toolCalls.length > 0 && (
+                                    <div>
+                                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tool Calls</h4>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        {toolCalls.map((tc, tIdx) => (
+                                          <div key={tIdx} style={{ background: 'var(--bg-main)', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-medium)' }}>
+                                            <div style={{ fontWeight: 600, color: 'var(--primary-color)', marginBottom: '0.25rem' }}>{tc.name}</div>
+                                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                              {tc.args}
+                                            </pre>
+                                            
+                                            {i.metadata?.tool_outputs?.[tIdx] && (
+                                              <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-light)' }}>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem', textTransform: 'uppercase' }}>Output</div>
+                                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                                                  {i.metadata.tool_outputs[tIdx]}
+                                                </pre>
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

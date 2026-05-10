@@ -159,9 +159,10 @@ def bind_base_tool(agent_id: str, func_name: str, func_ref):
     '''{func_ref.__doc__}'''
     return {await_str}func_ref(agent_id={repr(agent_id)}{', ' + pass_args if pass_args else ''})
 """
-    namespace = {'func_ref': func_ref}
-    exec(func_code, globals(), namespace)
-    return namespace[func_name]
+    exec_globals = globals().copy()
+    exec_globals['func_ref'] = func_ref
+    exec(func_code, exec_globals)
+    return exec_globals[func_name]
 
 def make_dynamic_tool(agent_id: str, action_def: dict):
     tool_name = action_def["tool_name"]

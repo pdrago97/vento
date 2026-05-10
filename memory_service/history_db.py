@@ -21,7 +21,8 @@ def _init_db(conn):
             type UNINDEXED,
             content,
             file_path UNINDEXED,
-            timestamp UNINDEXED
+            timestamp UNINDEXED,
+            metadata UNINDEXED
         )
     ''')
     # Create reports table
@@ -36,13 +37,15 @@ def _init_db(conn):
     ''')
     conn.commit()
 
-def log_interaction(agent_id: str, session_id: str, role: str, interaction_type: str, content: str, file_path: str = ""):
+def log_interaction(agent_id: str, session_id: str, role: str, interaction_type: str, content: str, file_path: str = "", metadata: dict = None):
     conn = get_connection()
     c = conn.cursor()
+    import json
+    metadata_str = json.dumps(metadata) if metadata else None
     c.execute('''
-        INSERT INTO interactions (agent_id, session_id, role, type, content, file_path, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (agent_id, session_id, role, interaction_type, content, file_path, time.time()))
+        INSERT INTO interactions (agent_id, session_id, role, type, content, file_path, timestamp, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (agent_id, session_id, role, interaction_type, content, file_path, time.time(), metadata_str))
     conn.commit()
 
 def search_history(agent_id: str, query: str, limit: int = 50):
@@ -57,7 +60,7 @@ def search_history(agent_id: str, query: str, limit: int = 50):
         safe_query = query.replace('"', '""')
         match_query = f'"{safe_query}"'
         c.execute('''
-            SELECT agent_id, session_id, role, type, content, file_path, timestamp 
+            SELECT agent_id, session_id, role, type, content, file_path, timestamp, metadata
             FROM interactions
             WHERE interactions MATCH ?
               AND agent_id = ?
@@ -65,7 +68,13 @@ def search_history(agent_id: str, query: str, limit: int = 50):
             LIMIT ?
         ''', (match_query, agent_id, limit))
         rows = c.fetchall()
-        return [dict(row) for row in rows]
+        import json
+        result = []
+        for row in rows:
+            d = dict(row)
+            d['metadata'] = json.loads(d['metadata']) if d['metadata'] else None
+            result.append(d)
+        return result
     except Exception as e:
         print(f"Error in search_history: {e}")
         return []
@@ -115,14 +124,20 @@ def get_recent_interactions(agent_id: str, limit: int = 50):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        SELECT session_id, role, type, content, timestamp 
+        SELECT session_id, role, type, content, timestamp, metadata
         FROM interactions
         WHERE agent_id = ?
         ORDER BY timestamp DESC
         LIMIT ?
     ''', (agent_id, limit))
     rows = c.fetchall()
-    return [dict(row) for row in rows]
+    import json
+    result = []
+    for row in rows:
+        d = dict(row)
+        d['metadata'] = json.loads(d['metadata']) if d['metadata'] else None
+        result.append(d)
+    return result
 
 def get_active_sessions_list(agent_id: str, hours: int = 24):
     conn = get_connection()

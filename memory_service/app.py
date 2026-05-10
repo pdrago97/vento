@@ -715,8 +715,21 @@ Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
             runner = Runner(agent=admin_agent, app_name="vento", session_service=global_session_service)
             session_id = f"session_admin_{agent_id}"
             
+            log_interaction(agent_id, session_id, "user", "message", message or "Hello", metadata={"channel": "internal_ui"})
+            
             msg = types.Content(role="user", parts=[types.Part.from_text(text=message or "Hello")])
+            metadata = {"channel": "internal_ui", "tokens": 0, "reasoning": "", "tool_calls": [], "tool_outputs": []}
             async for event in runner.run_async(user_id="default", session_id=session_id, new_message=msg):
+                if getattr(event, "prompt_tokens", None):
+                    metadata["tokens"] = event.prompt_tokens
+                if getattr(event, "reasoning", None) and event.reasoning:
+                    metadata["reasoning"] += event.reasoning + "\n"
+                if getattr(event, "tool_calls", None) and event.tool_calls:
+                    for tc in event.tool_calls:
+                        metadata["tool_calls"].append({"name": getattr(tc, "name", str(tc)), "args": str(getattr(tc, "args", ""))})
+                if getattr(event, "tool_outputs", None) and event.tool_outputs:
+                    metadata["tool_outputs"].append(str(event.tool_outputs))
+                    
                 if hasattr(event, "content") and event.content is not None:
                     if hasattr(event.content, "parts"):
                         for part in event.content.parts:
@@ -725,7 +738,9 @@ Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
                         result_response += event.content.text
                 elif hasattr(event, "text") and event.text:
                     result_response += event.text
-                    
+            
+            log_interaction(agent_id, session_id, "assistant", "message", result_response, metadata=metadata)
+            
         else:
             # Standard agent
             agent = get_agent(agent_id)
@@ -739,8 +754,21 @@ Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
             runner = Runner(agent=agent, app_name="vento", session_service=global_session_service)
             session_id = f"session_{agent_id}"
             
+            log_interaction(agent_id, session_id, "user", "message", message or "Hello", metadata={"channel": "internal_ui"})
+            
             msg = types.Content(role="user", parts=[types.Part.from_text(text=message or "Hello")])
+            metadata = {"channel": "internal_ui", "tokens": 0, "reasoning": "", "tool_calls": [], "tool_outputs": []}
             async for event in runner.run_async(user_id="default", session_id=session_id, new_message=msg):
+                if getattr(event, "prompt_tokens", None):
+                    metadata["tokens"] = event.prompt_tokens
+                if getattr(event, "reasoning", None) and event.reasoning:
+                    metadata["reasoning"] += event.reasoning + "\n"
+                if getattr(event, "tool_calls", None) and event.tool_calls:
+                    for tc in event.tool_calls:
+                        metadata["tool_calls"].append({"name": getattr(tc, "name", str(tc)), "args": str(getattr(tc, "args", ""))})
+                if getattr(event, "tool_outputs", None) and event.tool_outputs:
+                    metadata["tool_outputs"].append(str(event.tool_outputs))
+                    
                 if hasattr(event, "content") and event.content is not None:
                     if hasattr(event.content, "parts"):
                         for part in event.content.parts:
@@ -749,7 +777,8 @@ Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
                         result_response += event.content.text
                 elif hasattr(event, "text") and event.text:
                     result_response += event.text
-
+            
+            log_interaction(agent_id, session_id, "assistant", "message", result_response, metadata=metadata)
         latency_ms = int((time.time() - start_time) * 1000)
         agent_latencies[agent_id].append(latency_ms)
 
