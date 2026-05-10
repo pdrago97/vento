@@ -1,0 +1,1 @@
+The system has an entity called User which has properties like name and email. Users can create Posts.

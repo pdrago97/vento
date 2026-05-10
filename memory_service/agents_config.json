@@ -43,7 +43,21 @@
         "cypher_query": "MATCH (t:Ticket) WHERE ($status = '' OR t.status = $status) AND ($user_id = '' OR t.user_id = $user_id) RETURN t.id, t.title, t.status, t.priority, t.user_id LIMIT 20",
         "success_message": "Query executed. Please review the returned results."
       }
-    ]
+    ],
+    "channels": {
+      "discord": {
+        "enabled": true,
+        "token": ""
+      },
+      "slack": {
+        "enabled": false,
+        "token": ""
+      },
+      "whatsapp": {
+        "enabled": false,
+        "token": ""
+      }
+    }
   },
   "sales_assistant_pro": {
     "name": "Sales Assistant Pro",
@@ -88,6 +102,64 @@
   "team_support_agent": {
     "name": "Internal Team Support Agent",
     "instruction": "You are an Internal Team Support Agent. You analyze historical transcripts and Slack/WhatsApp messages to help the team understand internal processes, tasks, and incident resolution protocols. Use your search tools to find exact historical conversations. You must use search_raw_history to lookup document content.",
+    "tools": [
+      "save_memory_to_graph",
+      "update_node_properties",
+      "search_raw_history",
+      "search_knowledge_graph"
+    ]
+  },
+  "stress_agent": {
+    "name": "Stress Test Analyst",
+    "instruction": "You are a senior analyst. Answer queries thoroughly based on the knowledge graph facts.",
+    "tools": [
+      "search_knowledge_graph",
+      "search_raw_history"
+    ]
+  },
+  "demo_restaurant": {
+    "name": "Restaurant Manager Agent",
+    "instruction": "You are a Restaurant Manager Agent. You analyze shift reports and operational metrics for a restaurant. You identify shortages and incidents. Use tools to save user info. You must use search_raw_history to lookup document content.",
+    "tools": [
+      "save_memory_to_graph",
+      "update_node_properties",
+      "search_raw_history",
+      "search_knowledge_graph"
+    ]
+  },
+  "demo_factory": {
+    "name": "Factory Operations Agent",
+    "instruction": "You are a Factory Operations Agent. You track assembly line bottlenecks, machine downtimes, and defect rates. You must use search_raw_history to lookup document content.",
+    "tools": [
+      "save_memory_to_graph",
+      "update_node_properties",
+      "search_raw_history",
+      "search_knowledge_graph"
+    ]
+  },
+  "demo_hr": {
+    "name": "HR Analytics Agent",
+    "instruction": "You are an HR Analytics Agent. You process 1:1 meeting notes, feedback, and identify skill gaps and burnout risks. You must use search_raw_history to lookup document content.",
+    "tools": [
+      "save_memory_to_graph",
+      "update_node_properties",
+      "search_raw_history",
+      "search_knowledge_graph"
+    ]
+  },
+  "demo_software": {
+    "name": "Software Project Agent",
+    "instruction": "You are a Software Project Agent. You map dependencies, blocks, and trace bugs to their root causes across agile teams. You must use search_raw_history to lookup document content.",
+    "tools": [
+      "save_memory_to_graph",
+      "update_node_properties",
+      "search_raw_history",
+      "search_knowledge_graph"
+    ]
+  },
+  "global": {
+    "name": "global",
+    "instruction": "You are an intelligent global Agent.\n        Your mission is to interact with users and automatically index knowledge and memory into your knowledge graph.\n        Whenever you learn something new and relevant to your mission, use the 'save_memory_to_graph' tool to save it.\n        If you need to update properties of an existing entity, use the 'update_node_properties' tool.\n        Use the 'search_raw_history' tool to search through old documents or verbatim conversations.\n        Use 'search_knowledge_graph' to retrieve your structured facts.\n        The agent_id you must use for the tools is 'global'.\n        Be concise, polite, and helpful.",
     "tools": [
       "save_memory_to_graph",
       "update_node_properties",

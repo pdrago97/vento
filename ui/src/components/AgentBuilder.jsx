@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Sparkles, Save, X, Bot, Plus, UploadCloud } from 'lucide-react';
+import { Sparkles, Save, X, Bot, Plus, UploadCloud, Play, Square, Activity } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -21,10 +21,19 @@ const AgentBuilder = ({ onClose, onSave }) => {
   const [actionTemplates, setActionTemplates] = useState([]);
   const [ontology, setOntology] = useState('');
   
+  // Channels & UI State
+  const [channels, setChannels] = useState({
+    discord: { enabled: false, bot_token: '' },
+    slack: { enabled: false, bot_token: '' },
+    whatsapp: { enabled: false, api_token: '' }
+  });
+  const [builderTab, setBuilderTab] = useState('config'); // 'config' | 'ontology' | 'channels'
+  
   // Conversational State
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState('');
   const [chatHistory, setChatHistory] = useState([]);
+  
 
   const fetchTools = async () => {
     try {
@@ -87,6 +96,13 @@ const AgentBuilder = ({ onClose, onSave }) => {
         } else {
           setOntology('');
         }
+        if (data.config.channels) {
+          setChannels({
+            discord: { enabled: !!data.config.channels.discord, bot_token: data.config.channels.discord?.bot_token || '' },
+            slack: { enabled: !!data.config.channels.slack, bot_token: data.config.channels.slack?.bot_token || '' },
+            whatsapp: { enabled: !!data.config.channels.whatsapp, api_token: data.config.channels.whatsapp?.api_token || '' }
+          });
+        }
       } else {
         setError(data.message || 'Failed to generate agent configuration.');
       }
@@ -136,6 +152,13 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
         } else {
           setOntology('');
         }
+        if (data.config.channels) {
+          setChannels({
+            discord: { enabled: !!data.config.channels.discord, bot_token: data.config.channels.discord?.bot_token || '' },
+            slack: { enabled: !!data.config.channels.slack, bot_token: data.config.channels.slack?.bot_token || '' },
+            whatsapp: { enabled: !!data.config.channels.whatsapp, api_token: data.config.channels.whatsapp?.api_token || '' }
+          });
+        }
         setStep('builder');
       } else {
         setError(data.message || 'Failed to generate skeleton.');
@@ -179,7 +202,15 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
           instruction: instruction,
           tools: selectedTools,
           action_templates: actionTemplates,
-          ontology: parsedOntology
+          ontology: parsedOntology,
+          channels: Object.fromEntries(
+            Object.entries(channels)
+              .filter(([_, v]) => v.enabled)
+              .map(([k, v]) => {
+                const { enabled, ...rest } = v;
+                return [k, rest];
+              })
+          )
         })
       });
       
@@ -265,69 +296,68 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
         
         {/* Header */}
         <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#60a5fa', fontWeight: 600, fontSize: '1.125rem' }}>
+          <div className="flex-row text-primary text-h3">
             <Bot size={24} />
             {step === 'onboarding' ? 'New Agent Wizard' : 'Agent Builder'}
           </div>
-          <button onClick={onClose} style={{ color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button onClick={onClose} className="btn btn-ghost btn-icon">
             <X size={20} />
           </button>
         </div>
         
         {step === 'onboarding' ? (
-          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+          <div className="modal-body flex-col flex-center" style={{ textAlign: 'center', padding: '3rem' }}>
             <div style={{ maxWidth: '600px', width: '100%', margin: '0 auto' }}>
-              <div style={{ marginBottom: '2rem' }}>
-                <Sparkles size={48} style={{ color: '#60a5fa', margin: '0 auto 1rem', opacity: 0.8 }} />
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white', marginBottom: '0.5rem' }}>Let's sketch your new Agent!</h2>
-                <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>Tell me a bit about what this agent should do, and I'll generate a complete skeleton (including instructions and a knowledge graph ontology) for you to refine.</p>
+              <div style={{ marginBottom: '2.5rem' }}>
+                <Sparkles size={48} className="text-primary" style={{ margin: '0 auto 1.5rem', opacity: 0.9 }} />
+                <h2 className="text-h2 text-main" style={{ marginBottom: '0.75rem' }}>Let's sketch your new Agent!</h2>
+                <p className="text-muted text-body">Tell me a bit about what this agent should do, and I'll generate a complete skeleton (including instructions and a knowledge graph ontology) for you to refine.</p>
               </div>
 
               {error && (
-                <div style={{ marginBottom: '1.5rem', padding: '0.75rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#f87171', borderRadius: '0.25rem', fontSize: '0.875rem', textAlign: 'left' }}>
+                <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'var(--danger-surface)', border: '1px solid hsla(348, 83%, 47%, 0.3)', color: 'var(--danger-color)', borderRadius: 'var(--radius-md)', fontSize: '0.875rem', textAlign: 'left' }}>
                   {error}
                 </div>
               )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', textAlign: 'left' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: '#d1d5db', marginBottom: '0.5rem' }}>
+              <div className="flex-col" style={{ gap: '1.5rem', textAlign: 'left' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label text-main">
                     1. What is the primary goal of this agent?
                   </label>
                   <textarea
                     className="input-field"
-                    style={{ width: '100%', minHeight: '80px', resize: 'vertical', boxSizing: 'border-box' }}
+                    style={{ minHeight: '100px', resize: 'vertical' }}
                     placeholder="e.g., A legal assistant that analyzes contracts and finds loopholes..."
                     value={wizardGoal}
                     onChange={(e) => setWizardGoal(e.target.value)}
                   />
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: '#d1d5db', marginBottom: '0.5rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label text-main">
                     2. What are some key questions this agent should be able to answer? (Optional)
                   </label>
                   <textarea
                     className="input-field"
-                    style={{ width: '100%', minHeight: '80px', resize: 'vertical', boxSizing: 'border-box' }}
+                    style={{ minHeight: '100px', resize: 'vertical' }}
                     placeholder="e.g., What are the penalties for breach of contract? Who are the signing parties?"
                     value={wizardQuestions}
                     onChange={(e) => setWizardQuestions(e.target.value)}
                   />
                 </div>
 
-                <div style={{ paddingTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <div className="flex-row" style={{ paddingTop: '1.5rem', justifyContent: 'flex-end' }}>
                   <button 
                     onClick={() => setStep('builder')}
-                    style={{ padding: '0.5rem 1rem', fontSize: '0.875rem', color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer' }}
+                    className="btn btn-ghost"
                   >
                     Skip to Manual Builder
                   </button>
                   <button 
                     onClick={handleGenerateSkeleton}
                     disabled={generating || !wizardGoal.trim()}
-                    className="add-btn"
-                    style={{ padding: '0.5rem 1.5rem', fontSize: '0.875rem', fontWeight: 500, opacity: (generating || !wizardGoal.trim()) ? 0.5 : 1 }}
+                    className="btn btn-primary"
                   >
                     {generating ? 'Generating Skeleton...' : 'Generate Skeleton'}
                     <Sparkles size={16} />
@@ -340,30 +370,30 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
           <div className="modal-body" style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
             
             {/* Left Column: Conversational AI */}
-          <div style={{ width: '100%', flex: '1', display: 'flex', flexDirection: 'column', gap: '1rem', borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: '1.5rem' }}>
-            <div className="glass-panel card" style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '60vh', padding: '1rem' }}>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 500, color: '#93c5fd', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Sparkles size={16} /> Agent Architect
+          <div className="flex-col" style={{ width: '100%', flex: '1', borderRight: '1px solid var(--border-medium)', paddingRight: '1.5rem' }}>
+            <div className="surface-glass flex-col" style={{ height: '100%', maxHeight: '60vh', padding: '1.5rem' }}>
+              <h3 className="text-primary flex-row" style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                <Sparkles size={18} /> Agent Architect
               </h3>
-              <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: '1rem' }}>
+              <p className="text-muted text-sm" style={{ marginBottom: '1rem' }}>
                 Chat with the AI to generate and interactively refine your agent and its ontology schema.
               </p>
               
-              <div style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', paddingRight: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ flex: 1, overflowY: 'auto', marginBottom: '1.5rem', paddingRight: '0.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {chatHistory.length === 0 ? (
-                  <div style={{ fontSize: '0.75rem', color: '#6b7280', fontStyle: 'italic', textAlign: 'center', marginTop: '2.5rem' }}>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center', marginTop: '2.5rem' }}>
                     No conversation yet. Describe the agent you want below.
                   </div>
                 ) : (
                   chatHistory.map((msg, i) => (
                     <div key={i} style={{
-                      padding: '0.625rem',
-                      borderRadius: '0.5rem',
-                      fontSize: '0.875rem',
+                      padding: '0.75rem 1rem',
+                      borderRadius: 'var(--radius-md)',
+                      fontSize: '0.9rem',
                       alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                      backgroundColor: msg.role === 'user' ? 'rgba(37, 99, 235, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                      color: msg.role === 'user' ? '#dbeafe' : '#d1d5db',
-                      border: msg.role === 'user' ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+                      backgroundColor: msg.role === 'user' ? 'hsla(222, 100%, 60%, 0.15)' : 'var(--bg-glass)',
+                      color: msg.role === 'user' ? 'var(--primary-light)' : 'var(--text-main)',
+                      border: msg.role === 'user' ? '1px solid hsla(222, 100%, 60%, 0.3)' : '1px solid var(--border-color)',
                       maxWidth: '90%'
                     }}>
                       {msg.content}
@@ -375,7 +405,7 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
               <div style={{ marginTop: 'auto' }}>
                 <textarea
                   className="input-field"
-                  style={{ width: '100%', minHeight: '80px', resize: 'none', marginBottom: '0.75rem' }}
+                  style={{ width: '100%', minHeight: '80px', resize: 'none', marginBottom: '1rem' }}
                   placeholder="e.g., I need a Legal Assistant... or 'Add a company CNPJ field'"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
@@ -389,155 +419,284 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
                 <button 
                   onClick={handleGenerate}
                   disabled={generating || !prompt.trim()}
-                  className="add-btn"
-                  style={{ width: '100%', padding: '0.5rem', opacity: (generating || !prompt.trim()) ? 0.5 : 1 }}
+                  className="btn btn-primary"
+                  style={{ width: '100%' }}
                 >
-                  {generating ? <div style={{ border: '2px solid transparent', borderTopColor: '#93c5fd', borderRadius: '50%', width: '16px', height: '16px', animation: 'spin 1s linear infinite' }}></div> : <Sparkles size={16} />}
+                  {generating ? <div style={{ border: '2px solid transparent', borderTopColor: 'var(--text-main)', borderRadius: '50%', width: '16px', height: '16px', animation: 'spin 1s linear infinite' }}></div> : <Sparkles size={16} />}
                   {generating ? 'Processing...' : 'Send Request'}
                 </button>
               </div>
             </div>
             
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs rounded p-3">
+              <div style={{ padding: '1rem', background: 'var(--danger-surface)', border: '1px solid hsla(348, 83%, 47%, 0.3)', color: 'var(--danger-color)', borderRadius: 'var(--radius-md)', fontSize: '0.875rem' }}>
                 {error}
               </div>
             )}
           </div>
           
-          <div style={{ flex: '2', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: '#9ca3af', marginBottom: '0.25rem' }}>Agent ID (no spaces)</label>
-                <input 
-                  type="text" 
-                  value={agentId} 
-                  onChange={(e) => setAgentId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                  className="input-field"
-                  style={{ width: '100%', boxSizing: 'border-box' }}
-                  placeholder="e.g., legal_assistant"
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: '#9ca3af', marginBottom: '0.25rem' }}>Display Name</label>
-                <input 
-                  type="text" 
-                  value={name} 
-                  onChange={(e) => setName(e.target.value)}
-                  className="input-field"
-                  style={{ width: '100%', boxSizing: 'border-box' }}
-                  placeholder="e.g., Legal Assistant"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: '#9ca3af', marginBottom: '0.25rem' }}>System Instructions</label>
-              <textarea 
-                value={instruction} 
-                onChange={(e) => setInstruction(e.target.value)}
-                className="input-field"
-                style={{ width: '100%', minHeight: '120px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }}
-                placeholder="You are an intelligent agent..."
-              />
-            </div>
-            
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: '#9ca3af', marginBottom: '0.5rem' }}>Available Tools</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                {availableTools.map(tool => (
-                  <button
-                    key={tool}
-                    onClick={() => toggleTool(tool)}
-                    style={{
-                      padding: '0.375rem 0.75rem',
-                      borderRadius: '9999px',
-                      fontSize: '0.75rem',
-                      fontWeight: 500,
-                      border: selectedTools.includes(tool) ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
-                      backgroundColor: selectedTools.includes(tool) ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                      color: selectedTools.includes(tool) ? '#34d399' : '#9ca3af',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.375rem',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    {selectedTools.includes(tool) ? <Plus size={12} style={{ transform: 'rotate(45deg)' }} /> : <Plus size={12} />}
-                    {tool}
-                  </button>
-                ))}
-                {availableTools.length === 0 && <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>No tools available or loading...</span>}
-              </div>
+          <div className="flex-col" style={{ flex: '2', gap: '1.25rem' }}>
+            {/* Tabs */}
+            <div className="flex-row" style={{ borderBottom: '1px solid var(--border-medium)', marginBottom: '0.5rem', gap: '1.5rem' }}>
+              <button 
+                className={`tab-button ${builderTab === 'config' ? 'active' : ''}`}
+                onClick={() => setBuilderTab('config')}
+                style={{
+                  background: 'none', border: 'none', padding: '0.75rem 0', cursor: 'pointer',
+                  borderBottom: builderTab === 'config' ? '2px solid var(--primary-color)' : '2px solid transparent',
+                  color: builderTab === 'config' ? 'var(--primary-light)' : 'var(--text-muted)',
+                  fontWeight: builderTab === 'config' ? 600 : 500
+                }}
+              >
+                Configuration
+              </button>
+              <button 
+                className={`tab-button ${builderTab === 'channels' ? 'active' : ''}`}
+                onClick={() => setBuilderTab('channels')}
+                style={{
+                  background: 'none', border: 'none', padding: '0.75rem 0', cursor: 'pointer',
+                  borderBottom: builderTab === 'channels' ? '2px solid var(--primary-color)' : '2px solid transparent',
+                  color: builderTab === 'channels' ? 'var(--primary-light)' : 'var(--text-muted)',
+                  fontWeight: builderTab === 'channels' ? 600 : 500
+                }}
+              >
+                Channels
+              </button>
+              <button 
+                className={`tab-button ${builderTab === 'ontology' ? 'active' : ''}`}
+                onClick={() => setBuilderTab('ontology')}
+                style={{
+                  background: 'none', border: 'none', padding: '0.75rem 0', cursor: 'pointer',
+                  borderBottom: builderTab === 'ontology' ? '2px solid var(--primary-color)' : '2px solid transparent',
+                  color: builderTab === 'ontology' ? 'var(--primary-light)' : 'var(--text-muted)',
+                  fontWeight: builderTab === 'ontology' ? 600 : 500
+                }}
+              >
+                Knowledge & Ontology
+              </button>
             </div>
 
-            {actionTemplates && actionTemplates.length > 0 && (
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: '#9ca3af', marginBottom: '0.5rem' }}>Dynamic Operational Tools (Action Templates)</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {actionTemplates.map((template, idx) => (
-                    <div key={idx} style={{ padding: '0.75rem', backgroundColor: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '0.375rem' }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.875rem', color: '#93c5fd', marginBottom: '0.25rem' }}>{template.tool_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#d1d5db', marginBottom: '0.5rem' }}>{template.description}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#6b7280', fontFamily: 'monospace', whiteSpace: 'pre-wrap', backgroundColor: 'rgba(0,0,0,0.2)', padding: '0.5rem', borderRadius: '0.25rem' }}>
-                        {template.query}
-                      </div>
-                    </div>
-                  ))}
+            {builderTab === 'config' && (
+              <div className="flex-col" style={{ gap: '1.25rem' }}>
+                <div className="flex-row">
+                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                    <label className="form-label">Agent ID (no spaces)</label>
+                    <input 
+                      type="text" 
+                      value={agentId} 
+                      onChange={(e) => setAgentId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                      className="input-field"
+                      placeholder="e.g., legal_assistant"
+                    />
+                  </div>
+                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                    <label className="form-label">Display Name</label>
+                    <input 
+                      type="text" 
+                      value={name} 
+                      onChange={(e) => setName(e.target.value)}
+                      className="input-field"
+                      placeholder="e.g., Legal Assistant"
+                    />
+                  </div>
                 </div>
+                
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">System Instructions</label>
+                  <textarea 
+                    value={instruction} 
+                    onChange={(e) => setInstruction(e.target.value)}
+                    className="input-field"
+                    style={{ minHeight: '120px', fontFamily: 'monospace', resize: 'vertical' }}
+                    placeholder="You are an intelligent agent..."
+                  />
+                </div>
+                
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Available Tools</label>
+                  <div className="flex-row" style={{ flexWrap: 'wrap' }}>
+                    {availableTools.map(tool => (
+                      <button
+                        key={tool}
+                        onClick={() => toggleTool(tool)}
+                        style={{
+                          padding: '0.4rem 0.75rem',
+                          borderRadius: '9999px',
+                          fontSize: '0.8rem',
+                          fontWeight: 500,
+                          border: selectedTools.includes(tool) ? '1px solid hsla(150, 100%, 40%, 0.5)' : '1px solid var(--border-color)',
+                          backgroundColor: selectedTools.includes(tool) ? 'hsla(150, 100%, 40%, 0.1)' : 'var(--bg-glass)',
+                          color: selectedTools.includes(tool) ? 'var(--success-color)' : 'var(--text-muted)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.375rem',
+                          transition: 'all var(--transition-fast)'
+                        }}
+                      >
+                        {selectedTools.includes(tool) ? <Plus size={14} style={{ transform: 'rotate(45deg)' }} /> : <Plus size={14} />}
+                        {tool}
+                      </button>
+                    ))}
+                    {availableTools.length === 0 && <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No tools available or loading...</span>}
+                  </div>
+                </div>
+
+                {actionTemplates && actionTemplates.length > 0 && (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Dynamic Operational Tools (Action Templates)</label>
+                    <div className="flex-col">
+                      {actionTemplates.map((template, idx) => (
+                        <div key={idx} className="glass-panel" style={{ padding: '1rem', border: '1px solid hsla(222, 100%, 60%, 0.3)' }}>
+                          <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--primary-color)', marginBottom: '0.25rem' }}>{template.tool_name}</div>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--text-main)', marginBottom: '0.5rem' }}>{template.description}</div>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontFamily: 'monospace', whiteSpace: 'pre-wrap', backgroundColor: 'var(--bg-dark)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
+                            {template.query}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: '#9ca3af', marginBottom: '0.25rem' }}>Ontology Schema (JSON)</label>
-              <textarea 
-                value={ontology} 
-                onChange={(e) => setOntology(e.target.value)}
-                className="input-field"
-                style={{ width: '100%', minHeight: '150px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }}
-                placeholder='{"nodes": [], "predicates": [], "properties": {}}'
-              />
-            </div>
+            {builderTab === 'channels' && (
+              <div className="flex-col" style={{ gap: '1.25rem' }}>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Configure external messaging channels powered by OpenClaw. The generated OpenClaw manifest will automatically expose these connections.
+                </p>
+                
+                {/* Discord Channel */}
+                <div className="glass-panel" style={{ padding: '1rem', border: '1px solid var(--border-medium)' }}>
+                  <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--primary-light)' }}>Discord</div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={channels.discord.enabled} 
+                        onChange={(e) => setChannels(prev => ({...prev, discord: {...prev.discord, enabled: e.target.checked}}))} 
+                      />
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-main)' }}>Enable</span>
+                    </label>
+                  </div>
+                  {channels.discord.enabled && (
+                    <div className="form-group" style={{ marginBottom: 0, marginTop: '0.5rem' }}>
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>Bot Token</label>
+                      <input 
+                        type="password" 
+                        value={channels.discord.bot_token} 
+                        onChange={(e) => setChannels(prev => ({...prev, discord: {...prev.discord, bot_token: e.target.value}}))}
+                        className="input-field"
+                        placeholder="MTEx..."
+                      />
+                    </div>
+                  )}
+                </div>
 
-            {/* Document Ingestion Area */}
-            <div style={{ marginTop: '0.5rem', padding: '1rem', border: '1px dashed rgba(147, 197, 253, 0.3)', borderRadius: '0.5rem', backgroundColor: 'rgba(59, 130, 246, 0.05)' }}>
-              <h4 style={{ fontSize: '0.875rem', fontWeight: 500, color: '#93c5fd', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <UploadCloud size={16} /> Knowledge Ingestion
-              </h4>
-              <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: '0.75rem' }}>
-                Upload documents (PDF, MD, DOCX, Spreadsheets) to automatically update this agent's knowledge graph and ontology. Ensure Agent ID is set first.
-              </p>
-              
-              <input 
-                type="file" 
-                id="docUpload"
-                style={{ display: 'none' }}
-                accept=".pdf,.md,.txt,.docx,.doc,.csv,.xls,.xlsx,.png,.jpg,.jpeg,.mp3,.wav,.mp4,.mov,.webm"
-                onChange={handleFileUpload}
-                disabled={uploading || !agentId}
-              />
-              <label 
-                htmlFor="docUpload"
-                className="add-btn"
-                style={{ 
-                  display: 'inline-flex', 
-                  alignItems: 'center', 
-                  gap: '0.5rem', 
-                  padding: '0.5rem 1rem', 
-                  fontSize: '0.75rem', 
-                  cursor: (uploading || !agentId) ? 'not-allowed' : 'pointer',
-                  opacity: (uploading || !agentId) ? 0.5 : 1,
-                  border: '1px solid rgba(59, 130, 246, 0.5)',
-                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                  borderRadius: '0.25rem'
-                }}
-              >
-                {uploading ? <div style={{ border: '2px solid transparent', borderTopColor: '#93c5fd', borderRadius: '50%', width: '14px', height: '14px', animation: 'spin 1s linear infinite' }}></div> : <UploadCloud size={14} />}
-                {uploading ? 'Processing Document...' : 'Upload Document'}
-              </label>
-            </div>
-            
+                {/* Slack Channel */}
+                <div className="glass-panel" style={{ padding: '1rem', border: '1px solid var(--border-medium)' }}>
+                  <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--primary-light)' }}>Slack</div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={channels.slack.enabled} 
+                        onChange={(e) => setChannels(prev => ({...prev, slack: {...prev.slack, enabled: e.target.checked}}))} 
+                      />
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-main)' }}>Enable</span>
+                    </label>
+                  </div>
+                  {channels.slack.enabled && (
+                    <div className="form-group" style={{ marginBottom: 0, marginTop: '0.5rem' }}>
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>Bot Token</label>
+                      <input 
+                        type="password" 
+                        value={channels.slack.bot_token} 
+                        onChange={(e) => setChannels(prev => ({...prev, slack: {...prev.slack, bot_token: e.target.value}}))}
+                        className="input-field"
+                        placeholder="xoxb-..."
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* WhatsApp Channel */}
+                <div className="glass-panel" style={{ padding: '1rem', border: '1px solid var(--border-medium)' }}>
+                  <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--primary-light)' }}>WhatsApp</div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={channels.whatsapp.enabled} 
+                        onChange={(e) => setChannels(prev => ({...prev, whatsapp: {...prev.whatsapp, enabled: e.target.checked}}))} 
+                      />
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-main)' }}>Enable</span>
+                    </label>
+                  </div>
+                  {channels.whatsapp.enabled && (
+                    <div className="form-group" style={{ marginBottom: 0, marginTop: '0.5rem' }}>
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>API Token</label>
+                      <input 
+                        type="password" 
+                        value={channels.whatsapp.api_token} 
+                        onChange={(e) => setChannels(prev => ({...prev, whatsapp: {...prev.whatsapp, api_token: e.target.value}}))}
+                        className="input-field"
+                        placeholder="EAAB..."
+                      />
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+
+            {builderTab === 'ontology' && (
+              <div className="flex-col" style={{ gap: '1.25rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Ontology Schema (JSON)</label>
+                  <textarea 
+                    value={ontology} 
+                    onChange={(e) => setOntology(e.target.value)}
+                    className="input-field"
+                    style={{ width: '100%', minHeight: '150px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }}
+                    placeholder='{"nodes": [], "predicates": [], "properties": {}}'
+                  />
+                </div>
+
+                {/* Document Ingestion Area */}
+                <div className="surface-glass flex-col" style={{ padding: '1.25rem', border: '1px dashed hsla(222, 100%, 60%, 0.4)' }}>
+                  <h4 className="flex-row text-primary text-h3" style={{ fontSize: '0.95rem', marginBottom: '0.5rem' }}>
+                    <UploadCloud size={18} /> Knowledge Ingestion
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                    Upload documents (PDF, MD, DOCX, Spreadsheets) to automatically update this agent's knowledge graph and ontology. Ensure Agent ID is set first.
+                  </p>
+                  
+                  <input 
+                    type="file" 
+                    id="docUpload"
+                    style={{ display: 'none' }}
+                    accept=".pdf,.md,.txt,.docx,.doc,.csv,.xls,.xlsx,.png,.jpg,.jpeg,.mp3,.wav,.mp4,.mov,.webm"
+                    onChange={handleFileUpload}
+                    disabled={uploading || !agentId}
+                  />
+                  <label 
+                    htmlFor="docUpload"
+                    className="btn btn-ghost"
+                    style={{ 
+                      cursor: (uploading || !agentId) ? 'not-allowed' : 'pointer',
+                      opacity: (uploading || !agentId) ? 0.5 : 1,
+                      border: '1px solid var(--primary-color)',
+                      color: 'var(--primary-color)'
+                    }}
+                  >
+                    {uploading ? <div style={{ border: '2px solid transparent', borderTopColor: 'var(--primary-color)', borderRadius: '50%', width: '16px', height: '16px', animation: 'spin 1s linear infinite' }}></div> : <UploadCloud size={16} />}
+                    {uploading ? 'Processing Document...' : 'Upload Document'}
+                  </label>
+                </div>
+              </div>
+            )}
             
           </div>
         </div>
@@ -548,15 +707,14 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
         <div className="modal-footer">
           <button 
             onClick={onClose}
-            style={{ padding: '0.5rem 1rem', borderRadius: '0.375rem', fontSize: '0.875rem', fontWeight: 500, color: '#d1d5db', background: 'transparent', border: 'none', cursor: 'pointer' }}
+            className="btn btn-ghost"
           >
             Cancel
           </button>
           <button 
             onClick={handleSave}
             disabled={loading}
-            className="add-btn"
-            style={{ padding: '0.5rem 1rem', fontSize: '0.875rem', fontWeight: 500, background: '#2563eb', color: 'white', border: 'none', opacity: loading ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            className="btn btn-primary"
           >
             {loading ? <div style={{ border: '2px solid transparent', borderTopColor: 'white', borderRadius: '50%', width: '16px', height: '16px', animation: 'spin 1s linear infinite' }}></div> : <Save size={16} />}
             {loading ? 'Saving...' : 'Save Agent'}

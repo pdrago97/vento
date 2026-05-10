@@ -1,0 +1,1 @@
+John is a User. John created a Post titled "Hello World".

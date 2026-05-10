@@ -270,6 +270,10 @@ def create_or_update_agent(agent_id: str, name: str, instruction: str, tools: li
     elif agent_id in config and "action_templates" in config[agent_id]:
         # Preserve existing action_templates if not explicitly updated
         agent_data["action_templates"] = config[agent_id]["action_templates"]
+
+    if agent_id in config and "channels" in config[agent_id]:
+        # Preserve existing channels if they exist
+        agent_data["channels"] = config[agent_id]["channels"]
         
     config[agent_id] = agent_data
     save_agents_config(config)

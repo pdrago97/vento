@@ -64,3 +64,18 @@ def search_history(agent_id: str, query: str, limit: int = 50):
 
 # Ensure DB is created on load
 get_connection()
+
+def get_total_messages(agent_id: str) -> int:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM interactions WHERE agent_id = ?', (agent_id,))
+    res = c.fetchone()
+    return res[0] if res else 0
+
+def get_active_sessions(agent_id: str, hours: int = 24) -> int:
+    conn = get_connection()
+    c = conn.cursor()
+    cutoff_time = time.time() - (hours * 3600)
+    c.execute('SELECT COUNT(DISTINCT session_id) FROM interactions WHERE agent_id = ? AND timestamp >= ?', (agent_id, cutoff_time))
+    res = c.fetchone()
+    return res[0] if res else 0

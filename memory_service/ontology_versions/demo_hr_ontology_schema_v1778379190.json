@@ -1,0 +1,36 @@
+{
+    "nodes": [
+        "Colaborador",
+        "Departamento",
+        "Competencia",
+        "Sentimento",
+        "Iniciativa",
+        "Fact",
+        "Entity"
+    ],
+    "predicates": [
+        "PERTENCE_A",
+        "POSSUI_GAP_EM",
+        "DEMONSTROU_SENTIMENTO",
+        "SUGERIU"
+    ],
+    "properties": {
+        "Colaborador": [
+            "nivel_urgencia",
+            "data"
+        ],
+        "Sentimento": [
+            "nivel_urgencia",
+            "data"
+        ],
+        "Fact": [
+            "subject",
+            "predicate",
+            "object",
+            "timestamp",
+            "source_channel",
+            "status",
+            "embedding"
+        ]
+    }
+}

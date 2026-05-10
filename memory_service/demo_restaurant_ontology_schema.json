@@ -1,0 +1,39 @@
+{
+    "nodes": [
+        "Mesa",
+        "Prato",
+        "Ingrediente",
+        "MembroEquipe",
+        "Incidente",
+        "Fact",
+        "Entity"
+    ],
+    "predicates": [
+        "ATENDEU",
+        "CONTEM",
+        "FALTOU",
+        "ATRASOU_POR",
+        "COMPENSADO_COM"
+    ],
+    "properties": {
+        "Mesa": [
+            "tempo_espera",
+            "custo_estimado",
+            "turno"
+        ],
+        "Incidente": [
+            "tempo_espera",
+            "custo_estimado",
+            "turno"
+        ],
+        "Fact": [
+            "subject",
+            "predicate",
+            "object",
+            "timestamp",
+            "source_channel",
+            "status",
+            "embedding"
+        ]
+    }
+}

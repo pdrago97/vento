@@ -1,0 +1,36 @@
+{
+    "nodes": [
+        "Desenvolvedor",
+        "Squad",
+        "Feature",
+        "Bug",
+        "Bloqueio",
+        "Fact",
+        "Entity"
+    ],
+    "predicates": [
+        "TRABALHANDO_EM",
+        "BLOQUEADO_POR",
+        "CAUSOU",
+        "RESOLVIDO_NA"
+    ],
+    "properties": {
+        "Bug": [
+            "ambiente",
+            "impacto"
+        ],
+        "Feature": [
+            "ambiente",
+            "impacto"
+        ],
+        "Fact": [
+            "subject",
+            "predicate",
+            "object",
+            "timestamp",
+            "source_channel",
+            "status",
+            "embedding"
+        ]
+    }
+}

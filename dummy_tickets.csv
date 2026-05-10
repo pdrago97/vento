@@ -1,0 +1,4 @@
+ticket_id,customer_name,issue,status,created_at
+T-1001,Alice Johnson,Login fails with error 500,Open,2026-05-10
+T-1002,Bob Smith,Billing amount incorrect,In Progress,2026-05-09
+T-1003,Charlie Davis,Feature request: dark mode,Closed,2026-05-08

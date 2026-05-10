@@ -1,0 +1,25 @@
+{
+    "nodes": [
+        "Concept",
+        "Technology",
+        "Field",
+        "Person",
+        "Entity"
+    ],
+    "predicates": [
+        "RELATES_TO",
+        "INCLUDES",
+        "DEVELOPED_BY",
+        "DEFINES"
+    ],
+    "properties": {
+        "Concept": [
+            "name",
+            "description"
+        ],
+        "Technology": [
+            "name",
+            "application"
+        ]
+    }
+}

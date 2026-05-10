@@ -1,0 +1,35 @@
+{
+    "nodes": [
+        "LinhaProducao",
+        "Maquina",
+        "Operador",
+        "Lote",
+        "Defeito",
+        "Fact",
+        "Entity"
+    ],
+    "predicates": [
+        "OPERADA_POR",
+        "PRODUZIU",
+        "APRESENTOU_DEFEITO",
+        "CAUSOU_PARADA_EM"
+    ],
+    "properties": {
+        "Defeito": [
+            "quantidade_descarte",
+            "tipo_falha"
+        ],
+        "Maquina": [
+            "minutos_parados"
+        ],
+        "Fact": [
+            "subject",
+            "predicate",
+            "object",
+            "timestamp",
+            "source_channel",
+            "status",
+            "embedding"
+        ]
+    }
+}

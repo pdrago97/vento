@@ -1,8 +1,12 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from collections import defaultdict, deque
 import time
 import os
+import subprocess
+import threading
+import sys
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -13,11 +17,14 @@ client = None
 if GEMINI_API_KEY:
     client = genai.Client(api_key=GEMINI_API_KEY)
 
+agent_logs = defaultdict(lambda: deque(maxlen=50))
+agent_latencies = defaultdict(lambda: deque(maxlen=100))
+
 from graph_client import graph_client, get_schema_client
 from gatekeeper import extract_fact
 from ontology_manager import ontology_manager
 from adk_agents import get_agent
-from document_ingestion import extract_text_from_file, analyze_document_for_ontology, chat_multimodal_ontology
+from document_ingestion import extract_text_from_file, analyze_document_for_ontology, chat_multimodal_ontology, chat_multimodal_memory, chat_multimodal_admin
 from history_db import log_interaction, search_history
 
 app = FastAPI(title="OpenClaw Memory Service")
@@ -59,7 +66,7 @@ class ChatPayload(BaseModel):
     message: str
     
 @app.post("/ingest")
-def ingest_message(payload: MessagePayload):
+async def ingest_message(payload: MessagePayload):
     """Called by OpenClaw whenever a new message is received."""
     fact = extract_fact(payload.message)
     if fact:
@@ -68,7 +75,7 @@ def ingest_message(payload: MessagePayload):
             return {"status": "rejected", "reason": f"Predicate {predicate} not in ontology"}
         
         # Store in FalkorDB
-        graph_client.store_fact(
+        await graph_client.store_fact(
             user_id=payload.user_id,
             subject=subject,
             predicate=predicate,
@@ -81,9 +88,9 @@ def ingest_message(payload: MessagePayload):
     return {"status": "noise_ignored"}
 
 @app.post("/retrieve")
-def retrieve_context(payload: QueryPayload):
+async def retrieve_context(payload: QueryPayload):
     """Called by OpenClaw to fetch relevant facts before calling the LLM."""
-    facts = graph_client.retrieve_relevant_facts(
+    facts = await graph_client.retrieve_relevant_facts(
         user_id=payload.user_id, 
         query_text=payload.query
     )
@@ -108,22 +115,22 @@ def get_ontology_versions(agent_id: str):
     return {"versions": ontology_manager.list_versions(agent_id)}
 
 @app.get("/graph")
-def get_graph(agent_id: str = "global"):
+async def get_graph(agent_id: str = "global"):
     """Returns the full knowledge graph schema for visualization."""
-    return get_schema_client(agent_id).get_graph_data()
+    return await get_schema_client(agent_id).get_graph_data()
 
 @app.post("/graph/node")
-def save_node(payload: NodePayload, agent_id: str = "global"):
+async def save_node(payload: NodePayload, agent_id: str = "global"):
     """Creates or updates a node in the schema graph."""
-    success = get_schema_client(agent_id).upsert_node(payload.id, payload.label, payload.properties)
+    success = await get_schema_client(agent_id).upsert_node(payload.id, payload.label, payload.properties)
     if success:
         return {"status": "success", "node_id": payload.id}
     return {"status": "error"}
 
 @app.post("/graph/edge")
-def save_edge(payload: EdgePayload, agent_id: str = "global"):
+async def save_edge(payload: EdgePayload, agent_id: str = "global"):
     """Creates an edge between two nodes in the schema graph."""
-    success = get_schema_client(agent_id).create_edge(payload.source, payload.target, payload.relation, payload.properties)
+    success = await get_schema_client(agent_id).create_edge(payload.source, payload.target, payload.relation, payload.properties)
     if success:
         return {"status": "success", "source": payload.source, "target": payload.target}
     return {"status": "error"}
@@ -141,6 +148,13 @@ class AgentPayload(BaseModel):
     tools: list[str]
     ontology: dict | None = None
     action_templates: list[dict] | None = None
+    channels: dict | None = None
+
+class ChannelsPayload(BaseModel):
+    channels: dict
+
+class LogPayload(BaseModel):
+    log: str
 
 class AgentGeneratePayload(BaseModel):
     description: str
@@ -156,6 +170,10 @@ def list_tools():
 
 @app.post("/agents")
 def save_agent(payload: AgentPayload):
+    # Retrieve existing config to keep or update channels
+    from adk_agents import load_agents_config, save_agents_config
+    config = load_agents_config()
+    
     create_or_update_agent(
         payload.agent_id, 
         payload.name, 
@@ -163,9 +181,130 @@ def save_agent(payload: AgentPayload):
         payload.tools,
         action_templates=payload.action_templates
     )
+    
+    # Reload config to apply channels if present
+    if payload.channels is not None:
+        config = load_agents_config()
+        if payload.agent_id in config:
+            config[payload.agent_id]["channels"] = payload.channels
+            save_agents_config(config)
+            
     if payload.ontology:
         ontology_manager.save_schema(payload.ontology, payload.agent_id)
     return {"status": "success", "agent_id": payload.agent_id}
+
+@app.get("/agents/{agent_id}/channels")
+def get_agent_channels(agent_id: str):
+    from adk_agents import load_agents_config
+    config = load_agents_config()
+    if agent_id in config:
+        return {"channels": config[agent_id].get("channels", {})}
+    return {"channels": {}}
+
+@app.post("/agents/{agent_id}/channels")
+def update_agent_channels(agent_id: str, payload: ChannelsPayload):
+    from adk_agents import load_agents_config, save_agents_config
+    config = load_agents_config()
+    if agent_id not in config:
+        return {"status": "error", "message": "Agent not found"}
+    config[agent_id]["channels"] = payload.channels
+    save_agents_config(config)
+    return {"status": "success"}
+
+@app.post("/agents/{agent_id}/logs")
+def post_agent_log(agent_id: str, payload: LogPayload):
+    agent_logs[agent_id].append(payload.log)
+    return {"status": "success"}
+
+@app.get("/agents/{agent_id}/logs")
+def get_agent_logs(agent_id: str):
+    return {"logs": list(agent_logs[agent_id])}
+
+# --- Process Management for Agent Runners ---
+running_agents = {} # agent_id -> subprocess.Popen
+
+def tail_process_logs(process, agent_id):
+    """Background thread to capture runner stdout/stderr and feed to agent_logs."""
+    try:
+        for line in iter(process.stdout.readline, b''):
+            decoded_line = line.decode('utf-8', errors='replace').strip()
+            if decoded_line:
+                agent_logs[agent_id].append(decoded_line)
+    except Exception as e:
+        agent_logs[agent_id].append(f"[System] Log reader error: {str(e)}")
+    finally:
+        process.stdout.close()
+        process.wait()
+        agent_logs[agent_id].append(f"[System] Runner exited with code {process.returncode}")
+        if agent_id in running_agents and running_agents[agent_id] == process:
+            del running_agents[agent_id]
+
+@app.post("/agents/{agent_id}/runner/start")
+def start_agent_runner(agent_id: str):
+    if agent_id in running_agents and running_agents[agent_id].poll() is None:
+        return {"status": "error", "message": "Runner is already active."}
+        
+    script_path = os.path.join(os.path.dirname(__file__), "run_discord_agent.py")
+    
+    if not os.path.exists(script_path):
+        return {"status": "error", "message": f"Runner script not found: {script_path}"}
+        
+    try:
+        # Start process with unbuffered output
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        
+        process = subprocess.Popen(
+            [sys.executable, script_path, agent_id],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            cwd=os.path.dirname(__file__)
+        )
+        
+        running_agents[agent_id] = process
+        
+        # Start log reader thread
+        thread = threading.Thread(target=tail_process_logs, args=(process, agent_id), daemon=True)
+        thread.start()
+        
+        agent_logs[agent_id].append(f"[System] Started runner for {agent_id} (PID: {process.pid})")
+        return {"status": "success", "message": "Runner started"}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to start runner: {str(e)}"}
+
+@app.post("/agents/{agent_id}/runner/stop")
+def stop_agent_runner(agent_id: str):
+    if agent_id not in running_agents or running_agents[agent_id].poll() is not None:
+        return {"status": "error", "message": "Runner is not active."}
+        
+    process = running_agents[agent_id]
+    try:
+        process.terminate() # Send SIGTERM
+        # Give it a second to terminate nicely
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill() # Force kill if stuck
+            
+        agent_logs[agent_id].append(f"[System] Stopped runner for {agent_id}")
+        del running_agents[agent_id]
+        return {"status": "success", "message": "Runner stopped"}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to stop runner: {str(e)}"}
+
+@app.get("/agents/{agent_id}/runner/status")
+def get_agent_runner_status(agent_id: str):
+    is_active = False
+    if agent_id in running_agents:
+        process = running_agents[agent_id]
+        if process.poll() is None:
+            is_active = True
+        else:
+            del running_agents[agent_id]
+            
+    return {"status": "success", "active": is_active}
+
 
 @app.post("/agents/generate")
 def generate_agent(payload: AgentGeneratePayload):
@@ -294,7 +433,7 @@ async def chat_multimodal(agent_id: str = Form("global"), message: str = Form(No
         if message:
             log_interaction(agent_id, "multimodal_session", "user", "message", message)
             
-        result = chat_multimodal_ontology(temp_filepath, filename, text, schema, message or "")
+        result = await chat_multimodal_ontology(temp_filepath, filename, text, schema, message or "")
         
         # Log assistant suggestion
         log_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
@@ -329,7 +468,7 @@ async def ingest_document(agent_id: str, file: UploadFile = File(...)):
         current_schema = ontology_manager.get_schema(agent_id)
         
         try:
-            analysis_result = analyze_document_for_ontology(temp_filepath, file.filename, text, current_schema)
+            analysis_result = await analyze_document_for_ontology(temp_filepath, file.filename, text, current_schema)
         finally:
             if os.path.exists(temp_filepath):
                 os.remove(temp_filepath)
@@ -343,7 +482,7 @@ async def ingest_document(agent_id: str, file: UploadFile = File(...)):
             pred = fact.get("predicate")
             obj = fact.get("object")
             if subj and pred and obj:
-                graph_client.store_fact(
+                await graph_client.store_fact(
                     user_id="default",
                     subject=subj,
                     predicate=pred,
@@ -364,54 +503,74 @@ async def ingest_document(agent_id: str, file: UploadFile = File(...)):
         return {"status": "error", "message": str(e)}
 
 @app.post("/agent/{agent_id}/chat")
-async def chat_agent(agent_id: str, payload: ChatPayload):
+async def chat_agent(agent_id: str, message: str = Form(None), file: UploadFile = File(None)):
+    start_time = time.time()
     if not os.environ.get("GEMINI_API_KEY"):
         return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
     
     agent = get_agent(agent_id)
     try:
-        from google.adk import Runner
-        from google.adk.sessions import InMemorySessionService
-        from google.genai import types
-        from google.adk.errors.session_not_found_error import SessionNotFoundError
+        temp_filepath = None
+        filename = None
+        text = ""
         
-        global_session_service = getattr(app.state, "session_service", None)
-        if not global_session_service:
-            global_session_service = InMemorySessionService()
-            app.state.session_service = global_session_service
+        if file and file.filename:
+            file_bytes = await file.read()
+            filename = file.filename
             
-        runner = Runner(agent=agent, app_name="vento", session_service=global_session_service)
-        
-        session_id = f"session_{agent_id}"
-        session = await global_session_service.get_session(app_name="vento", user_id="default", session_id=session_id)
-        if not session:
-            await global_session_service.create_session(app_name="vento", user_id="default", session_id=session_id)
-            
-        # Log inbound message
-        log_interaction(agent_id, session_id, "user", "message", payload.message)
-        
-        msg = types.Content(role="user", parts=[types.Part.from_text(text=payload.message)])
-        
-        full_response = ""
-        async for event in runner.run_async(user_id="default", session_id=session_id, new_message=msg):
-            # Try to extract text from ModelResponseEvent or similar events
-            if hasattr(event, "message") and event.message is not None:
-                if hasattr(event.message, "parts"):
-                    for part in event.message.parts:
-                        if part.text:
-                            full_response += part.text
-                elif hasattr(event.message, "text") and event.message.text:
-                    full_response += event.message.text
-            elif hasattr(event, "text") and event.text:
-                full_response += event.text
+            temp_dir = os.path.join(os.path.dirname(__file__), "temp_uploads")
+            os.makedirs(temp_dir, exist_ok=True)
+            temp_filepath = os.path.join(temp_dir, filename)
+            with open(temp_filepath, "wb") as f:
+                f.write(file_bytes)
                 
-        if not full_response:
-            full_response = "Agent did not return a text response."
+            text = extract_text_from_file(filename, file_bytes)
+            log_interaction(agent_id, "multimodal_session", "user", "document", text, file_path=filename)
             
-        # Log outbound message
-        log_interaction(agent_id, session_id, "assistant", "message", full_response)
+        if message:
+            log_interaction(agent_id, "multimodal_session", "user", "message", message)
             
-        return {"status": "success", "response": full_response}
+        # Get some current context if necessary, or pass empty dict
+        current_graph_context = {}
+        
+        result = await chat_multimodal_memory(temp_filepath, filename, text, current_graph_context, message or "")
+        
+        log_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
+        
+        latency_ms = int((time.time() - start_time) * 1000)
+        agent_latencies[agent_id].append(latency_ms)
+        
+        return {"status": "success", "response": result.get("response", ""), "suggested_memory_updates": result.get("suggested_memory_updates", [])}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+    finally:
+        if temp_filepath and os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+
+class MemoryApplyPayload(BaseModel):
+    updates: list[dict]
+
+@app.post("/agent/{agent_id}/memory/apply")
+async def apply_memory_updates(agent_id: str, payload: MemoryApplyPayload):
+    try:
+        results = []
+        for fact in payload.updates:
+            subj = fact.get("subject")
+            pred = fact.get("predicate")
+            obj = fact.get("object")
+            if subj and pred and obj:
+                await graph_client.store_fact(
+                    user_id="default",
+                    subject=subj,
+                    predicate=pred,
+                    object_val=obj,
+                    timestamp=time.time(),
+                    source_channel="hitl_apply"
+                )
+                results.append(fact)
+        return {"status": "success", "applied": results}
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -426,58 +585,284 @@ def search_agent_history(agent_id: str, payload: SearchPayload):
     results = search_history(agent_id, payload.query, payload.limit)
     return {"status": "success", "results": results}
 
+@app.post("/agent/{agent_id}/unified_chat")
+async def unified_chat(agent_id: str, message: str = Form(None), file: UploadFile = File(None)):
+    start_time = time.time()
+    if not client:
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+        
+    try:
+        # Intent detection
+        # If there's a file, it's likely schema or ingestion, but let's let Gemini decide.
+        intent_prompt = f"""You are an Intent Router. The user sent a message to the '{agent_id}' agent.
+Message: "{message}"
+File attached: {"Yes" if file else "No"}
+
+Determine the user's intent. Choose exactly ONE of the following categories:
+- "schema": The user wants to modify the knowledge graph ontology/schema (add nodes, predicates, properties).
+- "admin": The user wants to audit operations, search history, generate analytical reports, or inspect the inventory/tickets.
+- "chat": The user wants to talk to the conversational agent, ask it to do a task, or save general memories.
+
+Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
+        
+        intent_response = client.models.generate_content(
+            model='gemini-3.1-flash-lite',
+            contents=intent_prompt
+        )
+        intent = intent_response.text.strip().lower()
+        if intent not in ["schema", "admin", "chat"]:
+            intent = "chat"
+            
+        ui_action = "memory"
+        if intent == "schema":
+            ui_action = "schema"
+        elif intent == "admin":
+            ui_action = "inventory"
+            
+        # Delegate
+        result_response = ""
+        suggestion = None
+        
+        if intent == "schema":
+            # Use ontology multimodal logic
+            schema = ontology_manager.get_schema(agent_id)
+            temp_filepath = None
+            filename = None
+            text = ""
+            
+            if file and file.filename:
+                file_bytes = await file.read()
+                filename = file.filename
+                temp_dir = os.path.join(os.path.dirname(__file__), "temp_uploads")
+                os.makedirs(temp_dir, exist_ok=True)
+                temp_filepath = os.path.join(temp_dir, filename)
+                with open(temp_filepath, "wb") as f:
+                    f.write(file_bytes)
+                text = extract_text_from_file(filename, file_bytes)
+                
+            res = await chat_multimodal_ontology(temp_filepath, filename, text, schema, message or "")
+            result_response = res.get("response", "Schema updated.")
+            suggestion = res.get("suggested_ontology_updates")
+            if temp_filepath and os.path.exists(temp_filepath):
+                os.remove(temp_filepath)
+                
+        elif intent == "admin":
+            # Admin ADK agent
+            from google.adk import Runner
+            from google.adk.sessions import InMemorySessionService
+            from google.adk.agents.llm_agent import Agent
+            from google.genai import types
+            from adk_agents import AVAILABLE_TOOLS
+            
+            tools_to_inject = [AVAILABLE_TOOLS["search_raw_history"], AVAILABLE_TOOLS["search_knowledge_graph"]]
+            admin_agent = Agent(
+                name=f"admin_for_{agent_id}",
+                model="gemini-2.0-flash",
+                instruction=f"You are an Admin and Data Analyst for '{agent_id}'. Sweep across memories, audit operations, retrieve insights. Use 'search_raw_history' and 'search_knowledge_graph'. Do NOT save new memories. Answer administrative queries thoroughly.",
+                tools=tools_to_inject
+            )
+            global_session_service = getattr(app.state, "session_service", None)
+            if not global_session_service:
+                global_session_service = InMemorySessionService()
+                app.state.session_service = global_session_service
+            runner = Runner(agent=admin_agent, app_name="vento", session_service=global_session_service)
+            session_id = f"session_admin_{agent_id}"
+            
+            msg = types.Content(role="user", parts=[types.Part.from_text(text=message or "Hello")])
+            async for event in runner.run_async(user_id="default", session_id=session_id, new_message=msg):
+                if hasattr(event, "content") and event.content is not None:
+                    if hasattr(event.content, "parts"):
+                        for part in event.content.parts:
+                            if part.text: result_response += part.text
+                    elif hasattr(event.content, "text") and event.content.text:
+                        result_response += event.content.text
+                elif hasattr(event, "text") and event.text:
+                    result_response += event.text
+                    
+        else:
+            # Standard agent
+            agent = get_agent(agent_id)
+            from google.adk import Runner
+            from google.adk.sessions import InMemorySessionService
+            from google.genai import types
+            global_session_service = getattr(app.state, "session_service", None)
+            if not global_session_service:
+                global_session_service = InMemorySessionService()
+                app.state.session_service = global_session_service
+            runner = Runner(agent=agent, app_name="vento", session_service=global_session_service)
+            session_id = f"session_{agent_id}"
+            
+            msg = types.Content(role="user", parts=[types.Part.from_text(text=message or "Hello")])
+            async for event in runner.run_async(user_id="default", session_id=session_id, new_message=msg):
+                if hasattr(event, "content") and event.content is not None:
+                    if hasattr(event.content, "parts"):
+                        for part in event.content.parts:
+                            if part.text: result_response += part.text
+                    elif hasattr(event.content, "text") and event.content.text:
+                        result_response += event.content.text
+                elif hasattr(event, "text") and event.text:
+                    result_response += event.text
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        agent_latencies[agent_id].append(latency_ms)
+
+        return {
+            "status": "success", 
+            "response": result_response or "Done.",
+            "ui_action": ui_action,
+            "intent": intent,
+            "suggestion": suggestion
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
 @app.post("/agent/{agent_id}/admin_chat")
-async def admin_chat_agent(agent_id: str, payload: ChatPayload):
+async def admin_chat_agent(agent_id: str, message: str = Form(None), file: UploadFile = File(None)):
+    start_time = time.time()
     if not os.environ.get("GEMINI_API_KEY"):
         return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
     
     try:
-        from google.adk import Runner
-        from google.adk.sessions import InMemorySessionService
-        from google.adk.agents.llm_agent import Agent
-        from google.genai import types
+        temp_filepath = None
+        filename = None
+        text = ""
         
-        from adk_agents import AVAILABLE_TOOLS
-        tools_to_inject = [AVAILABLE_TOOLS["search_raw_history"], AVAILABLE_TOOLS["search_knowledge_graph"]]
-
-        admin_agent = Agent(
-            name=f"admin_for_{agent_id}",
-            model="gemini-2.0-flash",
-            instruction=f"You are an Admin, Auditor, and Data Analyst for the '{agent_id}' agent. Your mission is to sweep across the available memory instances, audit operations, retrieve insights, and generate report components based on the available memories. Use 'search_raw_history' and 'search_knowledge_graph' to query the data. Do NOT save new memories. The agent_id you must use for the tools is '{agent_id}'. Answer the user's administrative and analytical queries thoroughly.",
-            tools=tools_to_inject
-        )
-
-        global_session_service = getattr(app.state, "session_service", None)
-        if not global_session_service:
-            global_session_service = InMemorySessionService()
-            app.state.session_service = global_session_service
+        if file and file.filename:
+            file_bytes = await file.read()
+            filename = file.filename
             
-        runner = Runner(agent=admin_agent, app_name="vento", session_service=global_session_service)
-        
-        session_id = f"session_admin_{agent_id}"
-        session = await global_session_service.get_session(app_name="vento", user_id="default", session_id=session_id)
-        if not session:
-            await global_session_service.create_session(app_name="vento", user_id="default", session_id=session_id)
-            
-        msg = types.Content(role="user", parts=[types.Part.from_text(text=payload.message)])
-        
-        full_response = ""
-        async for event in runner.run_async(user_id="default", session_id=session_id, new_message=msg):
-            if hasattr(event, "message") and event.message is not None:
-                if hasattr(event.message, "parts"):
-                    for part in event.message.parts:
-                        if part.text:
-                            full_response += part.text
-                elif hasattr(event.message, "text") and event.message.text:
-                    full_response += event.message.text
-            elif hasattr(event, "text") and event.text:
-                full_response += event.text
+            temp_dir = os.path.join(os.path.dirname(__file__), "temp_uploads")
+            os.makedirs(temp_dir, exist_ok=True)
+            temp_filepath = os.path.join(temp_dir, filename)
+            with open(temp_filepath, "wb") as f:
+                f.write(file_bytes)
                 
-        if not full_response:
-            full_response = "Admin Agent did not return a text response."
+            text = extract_text_from_file(filename, file_bytes)
+            log_interaction(agent_id, "multimodal_session", "user", "document", text, file_path=filename)
             
-        return {"status": "success", "response": full_response}
+        if message:
+            log_interaction(agent_id, "multimodal_session", "user", "message", message)
+            
+        current_inventory_context = {}
+        
+        result = await chat_multimodal_admin(temp_filepath, filename, text, current_inventory_context, message or "")
+        
+        log_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
+        
+        latency_ms = int((time.time() - start_time) * 1000)
+        agent_latencies[agent_id].append(latency_ms)
+        
+        return {"status": "success", "response": result.get("response", ""), "suggested_inventory_updates": result.get("suggested_inventory_updates", [])}
     except Exception as e:
         import traceback
         traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+    finally:
+        if temp_filepath and os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+
+class AdminApplyPayload(BaseModel):
+    updates: list[dict]
+
+@app.post("/agent/{agent_id}/admin/apply")
+async def apply_admin_updates(agent_id: str, payload: AdminApplyPayload):
+    try:
+        # In a real scenario, this would apply to the actual inventory/ticketing DB.
+        # For now, we simulate success.
+        return {"status": "success", "applied": payload.updates}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+# --- OpenClaw Integration Endpoints ---
+from openclaw_adapter import generate_openclaw_manifest
+from adk_agents import load_agents_config, save_memory_to_graph, search_knowledge_graph
+from history_db import get_total_messages, get_active_sessions
+import asyncio
+
+@app.get("/agents/{agent_id}/metrics")
+async def get_agent_metrics(agent_id: str):
+    total_messages = get_total_messages(agent_id)
+    active_sessions = get_active_sessions(agent_id)
+    
+    client = get_schema_client(agent_id)
+    try:
+        res = await asyncio.to_thread(client.graph.query, "MATCH ()-[r]->() RETURN count(r)")
+        sync_events = res.result_set[0][0] if res.result_set else 0
+    except Exception:
+        sync_events = 0
+        
+    latencies = agent_latencies.get(agent_id, [])
+    avg_latency = sum(latencies) // len(latencies) if latencies else 0
+    
+    return {
+        "active_sessions": active_sessions,
+        "total_messages": total_messages,
+        "sync_events": sync_events,
+        "avg_latency_ms": avg_latency
+    }
+
+@app.get("/agents/{agent_id}/openclaw-manifest")
+def get_openclaw_manifest(agent_id: str):
+    config = load_agents_config()
+    if agent_id not in config:
+        return {"status": "error", "message": "Agent not found"}
+    manifest = generate_openclaw_manifest(config[agent_id], agent_id, backend_url="http://localhost:8000")
+    return {"status": "success", "manifest": manifest}
+
+class OC_SaveMemoryPayload(BaseModel):
+    agent_id: str
+    subject: str
+    predicate: str
+    object_val: str
+    properties_json: str = "{}"
+
+@app.post("/openclaw/tools/save_memory_to_graph")
+def oc_save_memory(payload: OC_SaveMemoryPayload):
+    res = save_memory_to_graph(
+        payload.agent_id, 
+        payload.subject, 
+        payload.predicate, 
+        payload.object_val, 
+        payload.properties_json
+    )
+    return {"status": "success", "result": res}
+
+class OC_SearchGraphPayload(BaseModel):
+    agent_id: str
+    query: str
+
+@app.post("/openclaw/tools/search_knowledge_graph")
+def oc_search_graph(payload: OC_SearchGraphPayload):
+    res = search_knowledge_graph(payload.agent_id, payload.query)
+    return {"status": "success", "result": res}
+
+from fastapi import Request
+@app.post("/openclaw/tools/dynamic/{agent_id}/{tool_name}")
+async def oc_dynamic_tool(agent_id: str, tool_name: str, request: Request):
+    payload = await request.json()
+    config = load_agents_config()
+    if agent_id not in config:
+        return {"status": "error", "message": "Agent not found"}
+    
+    action_templates = config[agent_id].get("action_templates", [])
+    target_template = next((t for t in action_templates if t["tool_name"] == tool_name), None)
+    
+    if not target_template:
+        return {"status": "error", "message": "Tool not found"}
+        
+    from adk_agents import make_dynamic_tool
+    func = make_dynamic_tool(target_template)
+    
+    # Prepare kwargs
+    kwargs = {"agent_id": agent_id}
+    kwargs.update(payload)
+    
+    try:
+        res = func(**kwargs)
+        return {"status": "success", "result": res}
+    except Exception as e:
         return {"status": "error", "message": str(e)}

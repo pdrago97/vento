@@ -32,6 +32,30 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [edgeModal, setEdgeModal] = useState(null);
 
+  // ResizeObserver states
+  const containerRef = useRef(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  
+  // Legend state
+  const [isLegendOpen, setIsLegendOpen] = useState(true);
+
+  // ResizeObserver hook
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver(entries => {
+      for (let entry of entries) {
+        if (entry.contentRect) {
+          setDimensions({
+            width: entry.contentRect.width,
+            height: entry.contentRect.height
+          });
+        }
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   const displayGraphData = useMemo(() => {
     if (viewMode === 'schema') {
       if (!schema) return { nodes: [], links: [] };
@@ -325,20 +349,20 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
     let baseColor;
     if (viewMode === 'schema') {
       switch (node.label) {
-        case 'OntologyClass': baseColor = '#60a5fa'; break; // blue
-        case 'OntologyProperty': baseColor = '#34d399'; break; // emerald
-        case 'RelationsHub': baseColor = '#f472b6'; break; // pink
-        case 'OntologyPredicate': baseColor = '#a78bfa'; break; // purple
-        default: baseColor = '#9ca3af'; // gray
+        case 'OntologyClass': baseColor = 'hsl(212, 100%, 60%)'; break; // primary
+        case 'OntologyProperty': baseColor = 'hsl(150, 60%, 45%)'; break; // accent
+        case 'RelationsHub': baseColor = 'hsl(330, 81%, 65%)'; break; // tertiary
+        case 'OntologyPredicate': baseColor = 'hsl(250, 60%, 65%)'; break; // secondary
+        default: baseColor = 'hsl(215, 20%, 65%)'; // text-muted
       }
     } else {
       switch (node.label) {
-        case 'Class': baseColor = '#a78bfa'; break; // purple-400
-        default: baseColor = '#60a5fa'; // blue-400
+        case 'Class': baseColor = 'hsl(250, 60%, 65%)'; break; // secondary
+        default: baseColor = 'hsl(212, 100%, 60%)'; // primary
       }
     }
 
-    return isDimmed ? 'rgba(100, 100, 100, 0.2)' : baseColor;
+    return isDimmed ? 'hsla(215, 20%, 65%, 0.2)' : baseColor;
   };
 
   const getLinkColor = (link) => {
@@ -423,10 +447,32 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
       const fontSize = 4;
       ctx.font = `${fontSize}px Sans-Serif`;
       const textWidth = ctx.measureText(label).width;
-      const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2); // padding
+      const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.4); // padding
 
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-      ctx.fillRect(node.x - bckgDimensions[0] / 2, node.y + 4, bckgDimensions[0], bckgDimensions[1]);
+      const r = 1; // border radius
+      const x = node.x - bckgDimensions[0] / 2;
+      const y = node.y + 4;
+      const w = bckgDimensions[0];
+      const h = bckgDimensions[1];
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.75)'; // slate-900 with opacity
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+      ctx.shadowBlur = 4;
+
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -439,61 +485,54 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
 
   // Removed full unmount on loading to preserve ForceGraph2D container size during transitions
   return (
-    <div className="glass-panel" style={{ height: 'calc(100vh - 120px)', padding: 0, position: 'relative', overflow: 'hidden' }}>
+    <div ref={containerRef} className="glass-panel" style={{ height: 'calc(100vh - 120px)', padding: 0, position: 'relative', overflow: 'hidden' }}>
       {loading && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(2px)' }}>
           <Loader2 className="animate-spin text-blue-500" size={32} />
         </div>
       )}
-      <div style={{ position: 'absolute', top: '1rem', right: isSidebarOpen ? '430px' : '4rem', zIndex: 10, display: 'flex', gap: '0.5rem', alignItems: 'center', transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+      <div style={{ position: 'absolute', top: '1.5rem', right: isSidebarOpen ? '430px' : '4rem', zIndex: 10, display: 'flex', gap: '0.75rem', alignItems: 'center', transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
         {refreshing && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#60a5fa', marginRight: '1rem', backgroundColor: 'rgba(0,0,0,0.5)', padding: '0.25rem 0.75rem', borderRadius: '1rem' }}>
+          <div className="surface-glass flex-row" style={{ color: 'var(--primary-color)', padding: '0.4rem 1rem', borderRadius: 'var(--radius-full)' }}>
             <Loader2 className="animate-spin" size={16} />
-            <span style={{ fontSize: '0.875rem' }}>Refreshing graph...</span>
+            <span className="text-sm font-medium">Refreshing graph...</span>
           </div>
         )}
         {viewMode !== 'schema' && (
           <button 
-            className="add-btn"
+            className="btn btn-primary btn-sm"
             onClick={() => { setSelectedNode(null); setIsPanelOpen(true); }}
-            style={{ backgroundColor: 'rgba(74, 222, 128, 0.5)', marginLeft: '1rem' }}
           >
             <PlusCircle size={16} /> New Node
           </button>
         )}
         <button 
-          className={`add-btn ${showSettings ? 'active' : ''}`}
+          className={`btn btn-sm btn-icon ${showSettings ? 'btn-primary' : 'surface-glass'}`}
           onClick={() => setShowSettings(!showSettings)}
-          style={{ backgroundColor: showSettings ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255,255,255,0.05)', marginLeft: '0.5rem' }}
           title="Visualization Preferences"
         >
-          <Settings size={16} />
+          <Settings size={18} />
         </button>
       </div>
 
       {showSettings && (
-        <div style={{
+        <div className="surface-heavy flex-col" style={{
           position: 'absolute',
           top: '4rem',
           right: isSidebarOpen ? '430px' : '4rem',
           zIndex: 10,
-          background: 'rgba(0,0,0,0.85)',
           padding: '1rem',
-          borderRadius: '0.5rem',
-          border: '1px solid rgba(255,255,255,0.1)',
-          color: 'white',
           width: '250px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1rem',
           transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
         }}>
-          <h3 style={{ margin: 0, fontSize: '1rem' }}>Visualization Settings</h3>
+          <h3 className="text-h3 text-primary flex-row" style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>
+            <Settings size={16} /> Visualization
+          </h3>
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
+          <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+            <label className="form-label flex-between">
               <span>Repulsion Force</span>
-              <span>{settings.repulsion}</span>
+              <span className="text-primary">{settings.repulsion}</span>
             </label>
             <input 
               type="range" 
@@ -505,10 +544,10 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
             />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
+          <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+            <label className="form-label flex-between">
               <span>Link Distance</span>
-              <span>{settings.linkDistance}</span>
+              <span className="text-primary">{settings.linkDistance}</span>
             </label>
             <input 
               type="range" 
@@ -520,10 +559,10 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
             />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
+          <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+            <label className="form-label flex-between">
               <span>Center Gravity</span>
-              <span>{settings.centerGravity}</span>
+              <span className="text-primary">{settings.centerGravity}</span>
             </label>
             <input 
               type="range" 
@@ -535,22 +574,22 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
             />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+          <div className="flex-row" style={{ marginTop: '0.75rem', marginBottom: '0.5rem' }}>
             <input 
               type="checkbox" 
               id="staticMode"
               checked={settings.staticMode}
               onChange={e => setSettings(s => ({ ...s, staticMode: e.target.checked }))}
             />
-            <label htmlFor="staticMode" style={{ fontSize: '0.9rem', cursor: 'pointer' }}>
+            <label htmlFor="staticMode" className="form-label" style={{ cursor: 'pointer', margin: 0 }}>
               Freeze Graph (Static Mode)
             </label>
           </div>
 
           <button 
-            className="add-btn" 
+            className="btn btn-primary btn-sm" 
             onClick={handleCompact}
-            style={{ backgroundColor: 'rgba(59, 130, 246, 0.5)', marginTop: '0.5rem', width: '100%', justifyContent: 'center' }}
+            style={{ marginTop: '0.5rem', width: '100%' }}
           >
             Compact Graph
           </button>
@@ -574,8 +613,69 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
         />
       )}
 
+      <div className="surface-heavy flex-col" style={{
+        position: 'absolute',
+        bottom: '1rem',
+        right: '1rem',
+        zIndex: 10,
+        padding: '1rem',
+        width: '200px'
+      }}>
+        <div 
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+          onClick={() => setIsLegendOpen(!isLegendOpen)}
+        >
+          <h3 style={{ margin: 0, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Database size={14} /> RDF Legend
+          </h3>
+          <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>{isLegendOpen ? '▼' : '▲'}</span>
+        </div>
+        
+        {isLegendOpen && (
+          <div className="flex-col" style={{ gap: '0.5rem', marginTop: '0.5rem' }}>
+            {viewMode === 'schema' ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'hsl(212, 100%, 60%)' }} />
+                  <span>Ontology Class</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'hsl(150, 60%, 45%)' }} />
+                  <span>Property</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'hsl(330, 81%, 65%)' }} />
+                  <span>Relations Hub</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'hsl(250, 60%, 65%)' }} />
+                  <span>Predicate</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'hsl(250, 60%, 65%)' }} />
+                  <span>Class Node</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'hsl(212, 100%, 60%)' }} />
+                  <span>Entity (Fact)</span>
+                </div>
+              </>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'hsl(215, 20%, 65%)' }} />
+              <span>Unknown / Other</span>
+            </div>
+          </div>
+        )}
+      </div>
+
       <ForceGraph2D
         key={`${agentId}-${viewMode}`}
+        width={dimensions.width > 0 ? dimensions.width : undefined}
+        height={dimensions.height > 0 ? dimensions.height : undefined}
         ref={fgRef}
         graphData={displayGraphData}
         nodeCanvasObject={paintRing}

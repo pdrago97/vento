@@ -1,14 +1,15 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Database, Loader2, PackageOpen, Search, Filter, Calendar, Tag, AlertCircle } from 'lucide-react';
+import { Database, Loader2, PackageOpen, Search, Filter, Calendar, Tag, AlertCircle, X } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
 
-function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, refreshTrigger = 0 }) {
+function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssistantOpen, refreshTrigger = 0, onOpenIngest }) {
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLabel, setSelectedLabel] = useState('All');
+  const [selectedItem, setSelectedItem] = useState(null);
 
   const fetchGraphData = useCallback(async (isRefresh = false) => {
     try {
@@ -128,7 +129,17 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, refreshT
   };
 
   return (
-    <div className="glass-panel" style={{ height: 'calc(100vh - 120px)', padding: '1.5rem', position: 'relative', overflowY: 'auto' }}>
+    <div className="glass-panel" style={{ 
+      height: 'calc(100vh - 120px)', 
+      position: 'relative', 
+      overflowY: 'auto',
+      overflowX: 'hidden',
+      paddingTop: '2rem',
+      paddingBottom: '2rem',
+      paddingLeft: isAssistantOpen ? '340px' : '2rem',
+      paddingRight: isSidebarOpen ? '420px' : '2rem',
+      transition: 'padding 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+    }}>
       {loading && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(2px)' }}>
           <Loader2 className="animate-spin text-blue-500" size={32} />
@@ -137,8 +148,8 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, refreshT
       
       {/* Header and Controls */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h2 style={{ fontSize: '1.5rem', margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 600 }}>
+        <div style={{ flex: '1 1 min-content' }}>
+          <h2 style={{ fontSize: '1.75rem', margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 600 }}>
             <PackageOpen className="text-purple-500" size={24} />
             Operational Inventory
           </h2>
@@ -148,6 +159,29 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, refreshT
         </div>
 
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          {/* Ingest Button */}
+          {onOpenIngest && (
+            <button 
+              onClick={onOpenIngest}
+              style={{ 
+                padding: '0.4rem 1rem', 
+                fontSize: '0.85rem', 
+                fontWeight: 600,
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem',
+                backgroundColor: '#f97316', // orange-500
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                boxShadow: '0 2px 10px rgba(249, 115, 22, 0.3)',
+                cursor: 'pointer'
+              }}
+            >
+              <Database size={14} /> Ingest Knowledge
+            </button>
+          )}
+
           {/* Search */}
           <div className="input-group" style={{ margin: 0, width: '250px' }}>
             <Search size={16} className="text-gray-400" style={{ marginLeft: '0.75rem' }} />
@@ -196,7 +230,9 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, refreshT
           display: 'grid', 
           gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
           gap: '1.5rem',
-          paddingBottom: '2rem'
+          paddingBottom: '2rem',
+          width: selectedItem ? 'calc(100% - 380px)' : '100%',
+          transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
         }}>
           {filteredItems.map(item => {
             const props = item.properties || {};
@@ -206,35 +242,23 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, refreshT
             const propKeys = Object.keys(props).filter(k => k !== 'title' && k !== 'name');
 
             return (
-              <div key={item.id} className="card" style={{ 
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.05)',
-                borderRadius: '0.75rem',
-                padding: '1.25rem',
+              <div key={item.id} className={`glass-panel card ${selectedItem?.id === item.id ? 'ring-2 ring-purple-500' : ''}`} onClick={() => setSelectedItem(item)} style={{ 
+                padding: '1.5rem',
                 display: 'flex',
                 flexDirection: 'column',
-                transition: 'all 0.2s ease',
-                cursor: 'default'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.1)';
-                e.currentTarget.style.border = '1px solid rgba(255, 255, 255, 0.1)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'none';
-                e.currentTarget.style.border = '1px solid rgba(255, 255, 255, 0.05)';
-              }}
-              >
+                cursor: 'pointer',
+                background: 'rgba(30, 41, 59, 0.4)',
+                transform: selectedItem?.id === item.id ? 'translateY(-2px)' : 'none',
+                transition: 'all 0.2s ease'
+              }}>
                 {/* Card Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <div style={{ flex: 1, marginRight: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                       <Tag size={12} className="text-blue-400" />
-                      <span style={{ fontSize: '0.75rem', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{item.label}</span>
+                      <span className="badge">{item.label}</span>
                     </div>
-                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 500, color: '#f3f4f6', lineHeight: 1.3, wordBreak: 'break-word' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600, color: '#f8fafc', lineHeight: 1.3, wordBreak: 'break-word' }}>
                       {title}
                     </h3>
                   </div>
@@ -247,6 +271,46 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, refreshT
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Side Peek Detail Drawer */}
+      {selectedItem && (
+        <div className="glass-panel" style={{
+          position: 'fixed',
+          top: '100px', // Below top bar
+          right: isSidebarOpen ? '420px' : '2rem',
+          bottom: '2rem',
+          width: '350px',
+          backgroundColor: 'rgba(15, 23, 42, 0.95)',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          zIndex: 40,
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '-8px 0 24px rgba(0,0,0,0.5)',
+          padding: '1.5rem',
+          overflowY: 'auto',
+          transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          borderRadius: '1rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '1rem' }}>
+             <div>
+               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <Tag size={12} className="text-blue-400" />
+                  <span className="badge">{selectedItem.label}</span>
+               </div>
+               <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#f8fafc', fontWeight: 600 }}>
+                 {selectedItem.properties?.title || selectedItem.properties?.name || selectedItem.id}
+               </h3>
+             </div>
+             <button onClick={() => setSelectedItem(null)} className="btn-icon" style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%' }}>
+               <X size={16}/>
+             </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+             {Object.entries(selectedItem.properties || {}).map(([k, v]) => renderCardProperty(k, v))}
+          </div>
         </div>
       )}
     </div>

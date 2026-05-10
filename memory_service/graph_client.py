@@ -1,5 +1,7 @@
 from falkordb import FalkorDB
 import json
+import asyncio
+from tenacity import retry, stop_after_attempt, wait_exponential
 from embedding import get_embedding
 
 class OpenClawGraph:
@@ -11,11 +13,12 @@ class OpenClawGraph:
     def _init_schema(self):
         # Create vector index on Fact nodes if not exists
         try:
-            self.graph.query("CREATE VECTOR INDEX FOR (f:Fact) ON (f.embedding) OPTIONS {dimension: 768, metric: 'COSINE'}")
-        except Exception:
-            pass # Index might already exist
+            self.graph.query("CREATE VECTOR INDEX FOR (f:Fact) ON (f.embedding) OPTIONS {dimension: 3072, similarityFunction: 'cosine'}")
+        except Exception as e:
+            print(f"Error creating vector index: {e}")
 
-    def store_fact(self, user_id: str, subject: str, predicate: str, object_val: str, timestamp: float, source_channel: str):
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
+    async def store_fact(self, user_id: str, subject: str, predicate: str, object_val: str, timestamp: float, source_channel: str):
         """Stores a fact in the Knowledge Graph and invalidates conflicting old facts."""
         
         # 1. Deprecate previous facts with the same subject and predicate for this user
@@ -25,11 +28,11 @@ class OpenClawGraph:
         MATCH (u:User {id: $user_id})-[:KNOWS]->(f:Fact {subject: $subject, predicate: $predicate, status: 'active'})
         SET f.status = 'inactive'
         """
-        self.graph.query(deprecate_q, {'user_id': user_id, 'subject': subject, 'predicate': predicate})
+        await asyncio.to_thread(self.graph.query, deprecate_q, {'user_id': user_id, 'subject': subject, 'predicate': predicate})
 
         # 2. Insert the new fact
         text_representation = f"{subject} {predicate} {object_val}"
-        embedding = get_embedding(text_representation)
+        embedding = await get_embedding(text_representation)
         
         insert_q = """
         MERGE (u:User {id: $user_id})
@@ -47,7 +50,7 @@ class OpenClawGraph:
         # setting node properties directly might require proper vector syntax.
         # Let's execute the main node creation, then call a vector set query.
         
-        self.graph.query(insert_q, {
+        await asyncio.to_thread(self.graph.query, insert_q, {
             'user_id': user_id,
             'subject': subject,
             'predicate': predicate,
@@ -69,7 +72,7 @@ class OpenClawGraph:
             MATCH (u:User {id: $user_id})-[:KNOWS]->(f:Fact {subject: $subject, predicate: $predicate, object: $object_val, timestamp: $timestamp})
             SET f.embedding = vecf32($embedding)
             """
-            self.graph.query(set_vec_q, {
+            await asyncio.to_thread(self.graph.query, set_vec_q, {
                 'user_id': user_id,
                 'subject': subject,
                 'predicate': predicate,
@@ -80,20 +83,21 @@ class OpenClawGraph:
         except Exception as e:
             print("Error setting embedding:", e)
 
-    def retrieve_relevant_facts(self, user_id: str, query_text: str, top_k: int = 3) -> list[str]:
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
+    async def retrieve_relevant_facts(self, user_id: str, query_text: str, top_k: int = 3) -> list[str]:
         """Performs semantic search to inject relevant facts into context."""
-        query_emb = get_embedding(query_text)
+        query_emb = await get_embedding(query_text)
         
         # Semantic search using Vector Index
         search_q = """
         MATCH (u:User {id: $user_id})-[:KNOWS]->(f:Fact {status: 'active'})
-        WITH f, vec.distance(f.embedding, vecf32($query_emb)) AS dist
+        WITH f, vec.cosineDistance(f.embedding, vecf32($query_emb)) AS dist
         ORDER BY dist ASC
         LIMIT $top_k
         RETURN f.subject, f.predicate, f.object, dist
         """
         try:
-            res = self.graph.query(search_q, {
+            res = await asyncio.to_thread(self.graph.query, search_q, {
                 'user_id': user_id,
                 'query_emb': query_emb,
                 'top_k': top_k
@@ -115,16 +119,17 @@ class OpenClawGraph:
             ORDER BY f.timestamp DESC
             LIMIT $top_k
             """
-            res = self.graph.query(fallback_q, {'user_id': user_id, 'top_k': top_k})
+            res = await asyncio.to_thread(self.graph.query, fallback_q, {'user_id': user_id, 'top_k': top_k})
             return [f"{r[0]} {r[1]} {r[2]}" for r in res.result_set]
 
-    def get_graph_data(self):
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
+    async def get_graph_data(self):
         """Returns all nodes and links for UI visualization, excluding large embeddings."""
         nodes_q = "MATCH (n) RETURN n"
         edges_q = "MATCH ()-[r]->() RETURN r"
         
-        nodes_res = self.graph.query(nodes_q)
-        edges_res = self.graph.query(edges_q)
+        nodes_res = await asyncio.to_thread(self.graph.query, nodes_q)
+        edges_res = await asyncio.to_thread(self.graph.query, edges_q)
         
         nodes = []
         internal_to_prop_id = {}
@@ -158,7 +163,8 @@ class OpenClawGraph:
             })
         return {"nodes": nodes, "links": links}
 
-    def upsert_node(self, node_id: str, label: str, properties: dict):
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
+    async def upsert_node(self, node_id: str, label: str, properties: dict):
         """Creates or updates a node."""
         props = properties.copy()
         if 'id' not in props:
@@ -169,10 +175,11 @@ class OpenClawGraph:
             safe_label = "Node"
 
         q = f"MERGE (n:{safe_label} {{id: $node_id}}) SET n = $props RETURN n"
-        self.graph.query(q, {'node_id': node_id, 'props': props})
+        await asyncio.to_thread(self.graph.query, q, {'node_id': node_id, 'props': props})
         return True
 
-    def create_edge(self, source_id: str, target_id: str, relation: str, properties: dict = None):
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
+    async def create_edge(self, source_id: str, target_id: str, relation: str, properties: dict = None):
         """Creates an edge between two nodes."""
         props = properties if properties else {}
         safe_rel = "".join(c for c in relation if c.isalnum() or c == '_')
@@ -186,7 +193,7 @@ class OpenClawGraph:
         SET r += $props
         RETURN r
         """
-        self.graph.query(q, {'source_id': source_id, 'target_id': target_id, 'props': props})
+        await asyncio.to_thread(self.graph.query, q, {'source_id': source_id, 'target_id': target_id, 'props': props})
         return True
 
     def seed_schema(self):
