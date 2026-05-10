@@ -30,6 +30,7 @@ import AgentChat from './components/AgentChat';
 import AgentBuilder from './components/AgentBuilder';
 import AdminChat from './components/AdminChat';
 import InventoryExplorer from './components/InventoryExplorer';
+import CustomReportsDashboard from './components/CustomReportsDashboard';
 import KnowledgeIngestionModal from './components/KnowledgeIngestionModal';
 import SchemaConfigPanel from './components/SchemaConfigPanel';
 import CustomerChatWidget from './components/CustomerChatWidget';
@@ -323,6 +324,12 @@ function App() {
               refreshTrigger={refreshGraph} 
               onOpenIngest={() => setIsIngestModalOpen(true)}
             />
+          ) : viewMode === 'reports' ? (
+            <CustomReportsDashboard 
+              agentId={agentId} 
+              isSidebarOpen={false} 
+              isAssistantOpen={isAssistantOpen}
+            />
           ) : (
             <GraphExplorer 
               agentId={agentId} 
@@ -362,6 +369,12 @@ function App() {
             >
               Operational Inventory
             </button>
+            <button 
+              className={`sidebar-tab ${activeTab === 'reports' ? 'active' : ''}`}
+              onClick={() => setActiveTab('reports')}
+            >
+              Custom Reports
+            </button>
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeTab === 'schema' ? (
@@ -376,6 +389,10 @@ function App() {
                   />
                 </div>
               </>
+            ) : activeTab === 'inventory' ? (
+              <InventoryExplorer agentId={agentId} />
+            ) : activeTab === 'reports' ? (
+              <CustomReportsDashboard agentId={agentId} />
             ) : activeTab === 'memory' ? (
               <AgentChat agentId={agentId} onUpdate={() => setRefreshGraph(prev => prev + 1)} />
             ) : (

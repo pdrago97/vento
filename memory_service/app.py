@@ -25,7 +25,7 @@ from gatekeeper import extract_fact
 from ontology_manager import ontology_manager
 from adk_agents import get_agent
 from document_ingestion import extract_text_from_file, analyze_document_for_ontology, chat_multimodal_ontology, chat_multimodal_memory, chat_multimodal_admin
-from history_db import log_interaction, search_history
+from history_db import log_interaction, search_history, save_report, get_reports, delete_report
 
 app = FastAPI(title="OpenClaw Memory Service")
 
@@ -403,6 +403,53 @@ User request: {payload.message}
         return {"status": "success", "suggestion": suggestion}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+class SuggestPropertiesPayload(BaseModel):
+    label: str
+    properties: dict
+
+@app.post("/ontology/suggest_properties")
+def suggest_properties(payload: SuggestPropertiesPayload, agent_id: str = "global"):
+    if not client:
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+        
+    prompt = f"""You are a Graph Database Schema Assistant. 
+The user is editing a node/entity with the label/type: '{payload.label}'
+
+The current properties of this entity are:
+{payload.properties}
+
+Suggest 3 to 5 new relevant property keys that would be useful to add to this entity to further organize and orchestrate data.
+For each suggested property, provide a realistic default value or a very short description (e.g. placeholder) for what it should contain.
+Do NOT suggest properties that already exist in the current properties list.
+
+Return ONLY a JSON array of objects in this exact format:
+[
+  {{"key": "website", "value": "https://..."}},
+  {{"key": "founded_year", "value": "2020"}}
+]
+Do not include any markdown formatting like ```json.
+"""
+    try:
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-lite',
+            contents=prompt
+        )
+        
+        import json
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+        
+        suggestions = json.loads(text.strip())
+        return {"status": "success", "suggestions": suggestions}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
 
 from fastapi import Form
 @app.post("/ontology/chat_multimodal")
@@ -805,6 +852,46 @@ async def get_agent_metrics(agent_id: str):
         "avg_latency_ms": avg_latency
     }
 
+@app.get("/agents/{agent_id}/observability/interactions")
+async def get_agent_interactions(agent_id: str):
+    try:
+        from history_db import get_recent_interactions
+        return {"status": "success", "interactions": get_recent_interactions(agent_id)}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+@app.get("/agents/{agent_id}/observability/sessions")
+async def get_agent_sessions(agent_id: str):
+    try:
+        from history_db import get_active_sessions_list
+        return {"status": "success", "sessions": get_active_sessions_list(agent_id)}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+@app.get("/agents/{agent_id}/observability/syncs")
+async def get_agent_syncs(agent_id: str):
+    try:
+        client = get_schema_client(agent_id)
+        # Fetch up to 50 recent edges
+        res = await asyncio.to_thread(client.graph.query, "MATCH (s)-[r]->(o) RETURN s.id, type(r), o.id LIMIT 50")
+        syncs = []
+        for row in res.result_set:
+            syncs.append({
+                "subject": row[0],
+                "predicate": row[1],
+                "object": row[2]
+            })
+        return {"status": "success", "syncs": syncs}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+
 @app.get("/agents/{agent_id}/openclaw-manifest")
 def get_openclaw_manifest(agent_id: str):
     config = load_agents_config()
@@ -864,5 +951,84 @@ async def oc_dynamic_tool(agent_id: str, tool_name: str, request: Request):
     try:
         res = func(**kwargs)
         return {"status": "success", "result": res}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# --- Custom Reports Endpoints ---
+
+class ReportCreate(BaseModel):
+    title: str
+    content: str
+
+class ReportGenerateRequest(BaseModel):
+    prompt: str
+
+@app.post("/agent/{agent_id}/reports")
+async def create_report(agent_id: str, report: ReportCreate):
+    try:
+        import asyncio
+        await asyncio.to_thread(save_report, agent_id, report.title, report.content)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/agent/{agent_id}/reports")
+async def list_reports(agent_id: str):
+    try:
+        import asyncio
+        reports = await asyncio.to_thread(get_reports, agent_id)
+        return {"status": "success", "reports": reports}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.delete("/agent/{agent_id}/reports/{report_id}")
+async def remove_report(agent_id: str, report_id: int):
+    try:
+        import asyncio
+        await asyncio.to_thread(delete_report, report_id)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/agent/{agent_id}/reports/generate")
+async def generate_custom_report(agent_id: str, req: ReportGenerateRequest):
+    # Fetch current knowledge graph as context for the report
+    query = "MATCH (n) OPTIONAL MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 200"
+    try:
+        import asyncio
+        res = await asyncio.to_thread(execute_falkor_query, query, agent_id)
+        
+        # Format the data into text
+        context_text = "Operational Inventory Data Sample:\n"
+        for record in res:
+            n = record[0]
+            if n:
+                context_text += f"- Node: {n.labels[0] if n.labels else 'Unknown'} {n.properties}\n"
+            if len(record) > 2 and record[1] and record[2]:
+                m = record[2]
+                context_text += f"  -> [{(record[1].relation if hasattr(record[1], 'relation') else type(record[1]).__name__)}] -> {m.labels[0] if m.labels else 'Unknown'} {m.properties}\n"
+        
+        from google import genai
+        from google.genai import types
+        import os
+        
+        client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        
+        prompt = f"""
+You are an operations intelligence assistant. The user wants a custom report based on the current operational inventory context.
+Please compile a professional Markdown report.
+
+User Prompt: {req.prompt}
+
+--- Inventory Context ---
+{context_text}
+"""
+        response = await client.aio.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        
+        return {"status": "success", "report": response.text}
+        
     except Exception as e:
         return {"status": "error", "message": str(e)}

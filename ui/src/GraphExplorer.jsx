@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Database, Loader2, Layers, PlusCircle, Settings } from 'lucide-react';
+import { Database, Loader2, Layers, PlusCircle, Settings, RefreshCw } from 'lucide-react';
 
 import NodeDetailsPanel from './components/NodeDetailsPanel';
 import CreateEdgeModal from './components/CreateEdgeModal';
@@ -506,6 +506,14 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
             <PlusCircle size={16} /> New Node
           </button>
         )}
+        <button 
+          className="btn btn-sm btn-icon surface-glass"
+          onClick={() => fetchGraphData(true)}
+          title="Refresh Graph"
+          disabled={refreshing}
+        >
+          <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
+        </button>
         <button 
           className={`btn btn-sm btn-icon ${showSettings ? 'btn-primary' : 'surface-glass'}`}
           onClick={() => setShowSettings(!showSettings)}

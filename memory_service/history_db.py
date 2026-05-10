@@ -5,11 +5,9 @@ import time
 DB_PATH = os.path.join(os.path.dirname(__file__), "history.db")
 
 def get_connection():
-    init_needed = not os.path.exists(DB_PATH)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    if init_needed:
-        _init_db(conn)
+    _init_db(conn)
     return conn
 
 def _init_db(conn):
@@ -24,6 +22,16 @@ def _init_db(conn):
             content,
             file_path UNINDEXED,
             timestamp UNINDEXED
+        )
+    ''')
+    # Create reports table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id TEXT,
+            title TEXT,
+            content TEXT,
+            timestamp REAL
         )
     ''')
     conn.commit()
@@ -79,3 +87,53 @@ def get_active_sessions(agent_id: str, hours: int = 24) -> int:
     c.execute('SELECT COUNT(DISTINCT session_id) FROM interactions WHERE agent_id = ? AND timestamp >= ?', (agent_id, cutoff_time))
     res = c.fetchone()
     return res[0] if res else 0
+
+def save_report(agent_id: str, title: str, content: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO reports (agent_id, title, content, timestamp)
+        VALUES (?, ?, ?, ?)
+    ''', (agent_id, title, content, time.time()))
+    conn.commit()
+    return c.lastrowid
+
+def get_reports(agent_id: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT id, agent_id, title, content, timestamp FROM reports WHERE agent_id = ? ORDER BY timestamp DESC', (agent_id,))
+    rows = c.fetchall()
+    return [dict(row) for row in rows]
+
+def delete_report(report_id: int, agent_id: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('DELETE FROM reports WHERE id = ? AND agent_id = ?', (report_id, agent_id))
+    conn.commit()
+
+def get_recent_interactions(agent_id: str, limit: int = 50):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT session_id, role, type, content, timestamp 
+        FROM interactions
+        WHERE agent_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+    ''', (agent_id, limit))
+    rows = c.fetchall()
+    return [dict(row) for row in rows]
+
+def get_active_sessions_list(agent_id: str, hours: int = 24):
+    conn = get_connection()
+    c = conn.cursor()
+    cutoff_time = time.time() - (hours * 3600)
+    c.execute('''
+        SELECT session_id, MAX(timestamp) as last_active, COUNT(*) as msg_count
+        FROM interactions 
+        WHERE agent_id = ? AND timestamp >= ?
+        GROUP BY session_id
+        ORDER BY last_active DESC
+    ''', (agent_id, cutoff_time))
+    rows = c.fetchall()
+    return [dict(row) for row in rows]

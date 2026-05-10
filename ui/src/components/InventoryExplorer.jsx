@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Database, Loader2, PackageOpen, Search, Filter, Calendar, Tag, AlertCircle, X } from 'lucide-react';
+import { Database, Loader2, PackageOpen, Search, Filter, Calendar, Tag, AlertCircle, X, Edit2, Save, Plus, Wand2 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -9,7 +9,31 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLabel, setSelectedLabel] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [priorityFilter, setPriorityFilter] = useState('All');
+  const [sortBy, setSortBy] = useState('newest');
   const [selectedItem, setSelectedItem] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFormData, setEditFormData] = useState(null);
+  const [newPropKey, setNewPropKey] = useState('');
+  const [newPropVal, setNewPropVal] = useState('');
+  const [suggestedProperties, setSuggestedProperties] = useState([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+
+  useEffect(() => {
+    setIsEditing(false);
+    setNewPropKey('');
+    setNewPropVal('');
+    setSuggestedProperties([]);
+    setIsSuggesting(false);
+    if (selectedItem) {
+      setEditFormData({
+        id: selectedItem.id,
+        label: selectedItem.label,
+        properties: { ...(selectedItem.properties || {}) }
+      });
+    }
+  }, [selectedItem]);
 
   const fetchGraphData = useCallback(async (isRefresh = false) => {
     try {
@@ -34,6 +58,75 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
     fetchGraphData(refreshTrigger > 0);
   }, [fetchGraphData, refreshTrigger]);
 
+  const handleSaveEntity = async () => {
+    if (!editFormData) return;
+    try {
+      setRefreshing(true);
+      const res = await fetch(`${API_BASE}/graph/node?agent_id=${agentId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData)
+      });
+      if (res.ok) {
+        setIsEditing(false);
+        fetchGraphData();
+        setSelectedItem({ ...selectedItem, ...editFormData });
+      } else {
+        console.error('Failed to save entity');
+      }
+    } catch (e) {
+      console.error('Error saving entity:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleEditPropChange = (key, val) => {
+    setEditFormData(prev => ({
+      ...prev,
+      properties: { ...prev.properties, [key]: val }
+    }));
+  };
+
+  const handleRemoveProp = (key) => {
+    setEditFormData(prev => {
+      const updated = { ...prev.properties };
+      delete updated[key];
+      return { ...prev, properties: updated };
+    });
+  };
+
+  const handleAddProp = () => {
+    if (newPropKey.trim()) {
+      handleEditPropChange(newPropKey.trim(), newPropVal);
+      setNewPropKey('');
+      setNewPropVal('');
+    }
+  };
+
+  const handleSuggestProperties = async () => {
+    setIsSuggesting(true);
+    try {
+      const response = await fetch(`${API_BASE}/ontology/suggest_properties?agent_id=${agentId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: editFormData?.label || 'Unknown',
+          properties: editFormData?.properties || {}
+        })
+      });
+      const data = await response.json();
+      if (data.status === 'success' && data.suggestions) {
+        setSuggestedProperties(data.suggestions);
+      }
+    } catch (error) {
+      console.error("Failed to fetch suggestions:", error);
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
+
+
   // Operational objects are nodes that:
   // 1. Aren't base system nodes (Class, OntologyClass, OntologyProperty, RelationsHub, OntologyPredicate)
   // 2. Aren't 'Fact' (which are memory structures)
@@ -54,8 +147,30 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
     }
   }, [availableLabels, selectedLabel]);
 
+  const availableStatuses = useMemo(() => {
+    const statuses = new Set(inventoryItems.map(item => item.properties?.status).filter(Boolean));
+    return ['All', ...Array.from(statuses)];
+  }, [inventoryItems]);
+
+  const availablePriorities = useMemo(() => {
+    const priorities = new Set(inventoryItems.map(item => item.properties?.priority).filter(Boolean));
+    return ['All', ...Array.from(priorities)];
+  }, [inventoryItems]);
+
+  useEffect(() => {
+    if (!availableStatuses.includes(statusFilter) && statusFilter !== 'All') {
+      setStatusFilter('All');
+    }
+  }, [availableStatuses, statusFilter]);
+
+  useEffect(() => {
+    if (!availablePriorities.includes(priorityFilter) && priorityFilter !== 'All') {
+      setPriorityFilter('All');
+    }
+  }, [availablePriorities, priorityFilter]);
+
   const filteredItems = useMemo(() => {
-    return inventoryItems.filter(item => {
+    let result = inventoryItems.filter(item => {
       // Label filter
       if (selectedLabel !== 'All' && item.label !== selectedLabel) return false;
       
@@ -66,9 +181,35 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
         if (!searchString.includes(query)) return false;
       }
       
+      // Status filter
+      if (statusFilter !== 'All') {
+         if (!item.properties.status || item.properties.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
+      }
+
+      // Priority filter
+      if (priorityFilter !== 'All') {
+         if (!item.properties.priority || item.properties.priority.toLowerCase() !== priorityFilter.toLowerCase()) return false;
+      }
+
       return true;
     });
-  }, [inventoryItems, selectedLabel, searchQuery]);
+
+    // Sorting
+    result.sort((a, b) => {
+      const aTime = a.properties.timestamp || a.properties.created_at || 0;
+      const bTime = b.properties.timestamp || b.properties.created_at || 0;
+      const aTitle = String(a.properties.title || a.properties.name || a.id || '').toLowerCase();
+      const bTitle = String(b.properties.title || b.properties.name || b.id || '').toLowerCase();
+
+      if (sortBy === 'newest') return bTime - aTime;
+      if (sortBy === 'oldest') return aTime - bTime;
+      if (sortBy === 'a-z') return aTitle.localeCompare(bTitle);
+      if (sortBy === 'z-a') return bTitle.localeCompare(aTitle);
+      return 0;
+    });
+
+    return result;
+  }, [inventoryItems, selectedLabel, searchQuery, statusFilter, priorityFilter, sortBy]);
 
   const renderCardProperty = (key, value) => {
     if (key === 'id') return null; // usually redundant with title or displayed elsewhere
@@ -200,13 +341,56 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
             <Filter size={16} className="text-gray-400" />
             <select 
               className="input-field" 
-              style={{ width: 'auto', padding: '0.25rem', backgroundColor: 'transparent', border: 'none' }}
+              style={{ width: 'auto', padding: '0.25rem', backgroundColor: 'transparent', border: 'none', color: '#fff' }}
               value={selectedLabel}
               onChange={e => setSelectedLabel(e.target.value)}
+              title="Filter by Label"
             >
               {availableLabels.map(label => (
-                <option key={label} value={label}>{label}</option>
+                <option key={label} value={label} style={{ color: '#000' }}>{label}</option>
               ))}
+            </select>
+            
+            <select 
+              className="input-field" 
+              style={{ width: 'auto', padding: '0.25rem', backgroundColor: 'transparent', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              title="Filter by Status"
+            >
+              <option value="All" style={{ color: '#000' }}>Status: All</option>
+              {availableStatuses.filter(s => s !== 'All').map(s => (
+                <option key={s} value={s} style={{ color: '#000' }}>{s}</option>
+              ))}
+            </select>
+
+            <select 
+              className="input-field" 
+              style={{ width: 'auto', padding: '0.25rem', backgroundColor: 'transparent', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+              value={priorityFilter}
+              onChange={e => setPriorityFilter(e.target.value)}
+              title="Filter by Priority"
+            >
+              <option value="All" style={{ color: '#000' }}>Priority: All</option>
+              {availablePriorities.filter(p => p !== 'All').map(p => (
+                <option key={p} value={p} style={{ color: '#000' }}>{p}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Sort */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: 'rgba(0,0,0,0.3)', padding: '0.25rem 0.5rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <span style={{ fontSize: '0.8rem', color: '#9ca3af', paddingLeft: '0.25rem' }}>Sort by:</span>
+            <select 
+              className="input-field" 
+              style={{ width: 'auto', padding: '0.25rem', backgroundColor: 'transparent', border: 'none', color: '#fff' }}
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value)}
+            >
+              <option value="newest" style={{ color: '#000' }}>Newest</option>
+              <option value="oldest" style={{ color: '#000' }}>Oldest</option>
+              <option value="a-z" style={{ color: '#000' }}>A-Z</option>
+              <option value="z-a" style={{ color: '#000' }}>Z-A</option>
             </select>
           </div>
 
@@ -281,7 +465,7 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
           top: '100px', // Below top bar
           right: isSidebarOpen ? '420px' : '2rem',
           bottom: '2rem',
-          width: '350px',
+          width: '380px',
           backgroundColor: 'rgba(15, 23, 42, 0.95)',
           backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255,255,255,0.1)',
@@ -304,13 +488,123 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
                  {selectedItem.properties?.title || selectedItem.properties?.name || selectedItem.id}
                </h3>
              </div>
-             <button onClick={() => setSelectedItem(null)} className="btn-icon" style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%' }}>
-               <X size={16}/>
-             </button>
+             <div style={{ display: 'flex', gap: '0.5rem' }}>
+               {!isEditing ? (
+                 <button onClick={() => setIsEditing(true)} className="btn-icon" style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%' }} title="Edit Entity">
+                   <Edit2 size={16} />
+                 </button>
+               ) : (
+                 <button onClick={() => setIsEditing(false)} className="btn-icon" style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%', color: '#9ca3af' }} title="Cancel Editing">
+                   <X size={16} />
+                 </button>
+               )}
+               <button onClick={() => setSelectedItem(null)} className="btn-icon" style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%' }}>
+                 <X size={16}/>
+               </button>
+             </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-             {Object.entries(selectedItem.properties || {}).map(([k, v]) => renderCardProperty(k, v))}
-          </div>
+          
+          {!isEditing ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+               {Object.entries(selectedItem.properties || {}).map(([k, v]) => renderCardProperty(k, v))}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+               <div className="form-group" style={{ marginBottom: 0 }}>
+                 <label className="form-label" style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Label / Type</label>
+                 <input 
+                   className="input-field"
+                   style={{ width: '100%', padding: '0.5rem', backgroundColor: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)' }}
+                   value={editFormData?.label || ''} 
+                   onChange={e => setEditFormData(prev => ({ ...prev, label: e.target.value }))} 
+                 />
+               </div>
+               
+               <div style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', margin: '0.5rem 0' }}></div>
+               
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                 <label className="form-label" style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: 0 }}>Properties</label>
+                 <button onClick={handleSuggestProperties} disabled={isSuggesting} className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', display: 'flex', gap: '0.25rem', alignItems: 'center', color: '#60a5fa' }}>
+                   {isSuggesting ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                   Suggest
+                 </button>
+               </div>
+               
+               {suggestedProperties.length > 0 && (
+                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                   {suggestedProperties.map((sug, idx) => (
+                     <button key={idx} onClick={() => {
+                       handleEditPropChange(sug.key, sug.value);
+                       setSuggestedProperties(prev => prev.filter((_, i) => i !== idx));
+                     }} style={{ background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '12px', padding: '0.2rem 0.6rem', fontSize: '0.75rem', color: '#93c5fd', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                       <Plus size={10} /> {sug.key}
+                     </button>
+                   ))}
+                 </div>
+               )}
+
+               
+               {Object.entries(editFormData?.properties || {}).map(([key, val]) => {
+                 const isLongText = ['description', 'summary', 'context', 'notes', 'objective', 'content'].includes(key.toLowerCase()) || String(val).length > 50;
+                 return isLongText ? (
+                   <div key={key} className="flex-col" style={{ padding: '0.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                       <span style={{ color: '#9ca3af', fontSize: '0.8rem', fontWeight: 500 }}>{key}</span>
+                       <button onClick={() => handleRemoveProp(key)} className="btn-icon" style={{ color: '#ef4444', padding: '0.2rem' }}><X size={14} /></button>
+                     </div>
+                     <textarea
+                       className="input-field"
+                       value={val}
+                       onChange={e => handleEditPropChange(key, e.target.value)}
+                       style={{ width: '100%', minHeight: '80px', resize: 'vertical', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '0.5rem' }}
+                     />
+                   </div>
+                 ) : (
+                   <div key={key} className="flex-row" style={{ alignItems: 'center', gap: '0.5rem' }}>
+                     <input 
+                       readOnly 
+                       value={key}
+                       style={{ width: '35%', fontSize: '0.8rem', color: '#9ca3af', background: 'transparent', border: 'none' }} 
+                     />
+                     <input 
+                       className="input-field"
+                       value={val} 
+                       onChange={e => handleEditPropChange(key, e.target.value)} 
+                       style={{ width: '50%', padding: '0.4rem', backgroundColor: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)' }} 
+                     />
+                     <button onClick={() => handleRemoveProp(key)} className="btn-icon" style={{ color: '#ef4444', padding: '0.4rem', marginLeft: 'auto' }}>
+                       <X size={14} />
+                     </button>
+                   </div>
+                 );
+               })}
+               
+               <div className="flex-row" style={{ marginTop: '0.5rem', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)', gap: '0.5rem' }}>
+                 <input 
+                   className="input-field"
+                   placeholder="Key"
+                   value={newPropKey} 
+                   onChange={e => setNewPropKey(e.target.value)} 
+                   style={{ width: '40%', padding: '0.4rem', backgroundColor: 'rgba(0,0,0,0.2)' }} 
+                 />
+                 <input 
+                   className="input-field"
+                   placeholder="Value"
+                   value={newPropVal} 
+                   onChange={e => setNewPropVal(e.target.value)}
+                   onKeyDown={e => e.key === 'Enter' && handleAddProp()}
+                   style={{ width: '45%', padding: '0.4rem', backgroundColor: 'rgba(0,0,0,0.2)' }} 
+                 />
+                 <button onClick={handleAddProp} className="btn-icon" style={{ background: 'var(--primary-color)', color: 'white', padding: '0.4rem', borderRadius: '4px', marginLeft: 'auto' }}>
+                   <Plus size={14} />
+                 </button>
+               </div>
+               
+               <button onClick={handleSaveEntity} className="btn btn-primary" style={{ marginTop: '1rem', justifyContent: 'center' }}>
+                 <Save size={16} style={{ marginRight: '0.5rem' }} /> Save Entity
+               </button>
+            </div>
+          )}
         </div>
       )}
     </div>

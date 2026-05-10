@@ -3,9 +3,13 @@ import sys
 import json
 import asyncio
 import discord
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Importa o gerenciador de agentes do Vento
 from adk_agents import get_agent, load_agents_config
+from history_db import log_interaction
 
 def start_discord_agent(agent_id: str):
     """
@@ -30,7 +34,10 @@ def start_discord_agent(agent_id: str):
         
     bot_token = discord_config.get("token") or discord_config.get("bot_token")
     if not bot_token:
-        print(f"Erro: Bot Token do Discord não configurado para o agente '{agent_id}'.")
+        bot_token = os.environ.get("DISCORD_BOT_TOKEN")
+        
+    if not bot_token:
+        print(f"Erro: Bot Token do Discord não configurado para o agente '{agent_id}' e DISCORD_BOT_TOKEN não está no ambiente.")
         sys.exit(1)
         
     # 3. Inicializa o motor OpenClaw carregado com as ferramentas do Vento
@@ -57,8 +64,20 @@ def start_discord_agent(agent_id: str):
             return
             
         # Responde se o bot for mencionado (diretamente ou via cargo/role) ou se for uma DM
-        is_mentioned = client.user.mentioned_in(message)
         is_dm = isinstance(message.channel, discord.DMChannel)
+        
+        is_mentioned = client.user.mentioned_in(message)
+        
+        # Tenta verificar as roles manualmente caso mentioned_in falhe
+        if not is_mentioned and hasattr(message, "guild") and message.guild:
+            bot_member = message.guild.get_member(client.user.id)
+            if bot_member and hasattr(message, "role_mentions"):
+                if any(role in bot_member.roles for role in message.role_mentions):
+                    is_mentioned = True
+                    
+        # Fallback para string match
+        if not is_mentioned and (str(client.user.id) in message.content or client.user.name.lower() in message.content.lower()):
+            is_mentioned = True
         
         if is_mentioned or is_dm:
             print(f"Processando mensagem de {message.author}...")
@@ -84,6 +103,19 @@ def start_discord_agent(agent_id: str):
                     runner = Runner(agent=agent, app_name="vento", session_service=client.session_service)
                     session_id = f"discord_channel_{message.channel.id}"
                     
+                    session = await client.session_service.get_session(
+                        app_name="vento",
+                        user_id=str(message.author.id),
+                        session_id=session_id
+                    )
+                    
+                    if session is None:
+                        await client.session_service.create_session(
+                            app_name="vento", 
+                            user_id=str(message.author.id), 
+                            session_id=session_id
+                        )
+                    
                     msg = types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
                     response_text = ""
                     
@@ -102,6 +134,30 @@ def start_discord_agent(agent_id: str):
                     
                     # Envia a resposta final (depois que o LLM usou as ferramentas e gerou o texto)
                     await message.channel.send(response_text)
+                    
+                    # Log da interação no banco
+                    try:
+                        # Log user message
+                        await asyncio.to_thread(
+                            log_interaction,
+                            agent_id,
+                            session_id,
+                            "user",
+                            "discord_message",
+                            user_text
+                        )
+                        # Log bot response
+                        await asyncio.to_thread(
+                            log_interaction,
+                            agent_id,
+                            session_id,
+                            "assistant",
+                            "discord_response",
+                            response_text
+                        )
+                    except Exception as e:
+                        print(f"Erro ao logar interação no history.db: {e}")
+
                 except Exception as e:
                     print(f"Erro ao processar mensagem: {e}")
                     await message.channel.send("Desculpe, ocorreu um erro ao acessar meus bancos de dados. Tente novamente.")

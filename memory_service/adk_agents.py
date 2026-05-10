@@ -14,7 +14,7 @@ import json
 from history_db import search_history
 
 # Define the tool
-def save_memory_to_graph(agent_id: str, subject: str, predicate: str, object_val: str, properties_json: str = "{}"):
+async def save_memory_to_graph(agent_id: str, subject: str, predicate: str, object_val: str, properties_json: str = "{}"):
     """
     Stores a memory fragment into the agent's knowledge graph.
 
@@ -38,21 +38,21 @@ def save_memory_to_graph(agent_id: str, subject: str, predicate: str, object_val
     obj_id = object_val.replace(" ", "_").lower()
     
     # Save Subject Node
-    client.upsert_node(
+    await client.upsert_node(
         node_id=sub_id,
         label="Entity",
         properties={"name": subject}
     )
     
     # Save Object Node
-    client.upsert_node(
+    await client.upsert_node(
         node_id=obj_id,
         label="Entity",
         properties={"name": object_val}
     )
     
     # Save Edge
-    client.create_edge(
+    await client.create_edge(
         source_id=sub_id,
         target_id=obj_id,
         relation=predicate,
@@ -60,7 +60,7 @@ def save_memory_to_graph(agent_id: str, subject: str, predicate: str, object_val
     )
     return f"Successfully saved memory: {subject} {predicate} {object_val}"
 
-def update_node_properties(agent_id: str, node_id: str, properties_json: str = "{}"):
+async def update_node_properties(agent_id: str, node_id: str, properties_json: str = "{}"):
     """
     Updates properties for an existing node in the agent's knowledge graph.
     
@@ -78,7 +78,7 @@ def update_node_properties(agent_id: str, node_id: str, properties_json: str = "
         properties = {}
         
     # upsert_node merges properties if the node exists
-    client.upsert_node(
+    await client.upsert_node(
         node_id=node_id,
         label="Entity",
         properties=properties
@@ -160,13 +160,14 @@ def make_dynamic_tool(action_def: dict):
     params_str = ", ".join([f"'{k}': {k}" for k in parameters.keys()])
     
     func_code = f"""
-def {tool_name}({args_str}):
+async def {tool_name}({args_str}):
     '''
     {description}
     '''
     from graph_client import get_schema_client
     import uuid
     import time
+    import asyncio
     print(f"[Dynamic Tool] {tool_name} called with agent_id={{agent_id}}")
     client = get_schema_client(agent_id)
     
@@ -177,7 +178,7 @@ def {tool_name}({args_str}):
     query_params['__timestamp'] = time.time()
     
     try:
-        res = client.graph.query({repr(cypher_query)}, query_params)
+        res = await asyncio.to_thread(client.graph.query, {repr(cypher_query)}, query_params)
         
         results = []
         if res.result_set:
