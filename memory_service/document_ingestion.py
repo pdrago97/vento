@@ -50,7 +50,7 @@ def extract_text_from_file(filename: str, file_bytes: bytes) -> str:
     return text
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def analyze_document_for_ontology(filepath: str, filename: str, text: str, current_schema: dict):
+async def analyze_document_for_ontology(filepath: str, filename: str, text: str, current_schema: dict, agent_id: str = "global", session_id: str = "unknown", source_channel: str = "unknown"):
     """
     Uses Gemini to analyze the text or media and extract suggestions for the ontology,
     as well as returning concrete facts found in the document.
@@ -58,8 +58,13 @@ async def analyze_document_for_ontology(filepath: str, filename: str, text: str,
     if not client:
         raise Exception("GEMINI_API_KEY not configured")
         
-    prompt = f"""You are an expert Ontology and Knowledge Graph extractor.
+    prompt = f"""You are an expert Ontology and Knowledge Graph extractor for agent '{agent_id}'.
 I have provided a document or media file, and I want to extract information to update my knowledge graph.
+
+Provenance Context:
+- Agent ID: {agent_id}
+- Session ID: {session_id}
+- Source Channel: {source_channel}
 
 The current ontology schema is:
 {current_schema}
@@ -217,7 +222,7 @@ Do not wrap your response in markdown code blocks like ```json.
                 print(f"Could not delete file from Gemini: {e}")
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def chat_multimodal_memory(filepath: str, filename: str, text: str, current_graph_context: dict, message: str):
+async def chat_multimodal_memory(filepath: str, filename: str, text: str, current_graph_context: dict, message: str, agent_id: str = "global", session_id: str = "unknown", source_channel: str = "unknown"):
     """
     Uses Gemini to analyze text or media along with a user's message, 
     providing a conversational response and suggested memory updates (facts).
@@ -225,9 +230,14 @@ async def chat_multimodal_memory(filepath: str, filename: str, text: str, curren
     if not client:
         raise Exception("GEMINI_API_KEY not configured")
         
-    prompt = f"""You are an expert Knowledge Graph Memory assistant.
+    prompt = f"""You are an expert Knowledge Graph Memory assistant for agent '{agent_id}'.
 The user has provided a message and optionally a document or media file.
 You should answer their message and suggest updates to the memory graph based on the content or their request.
+
+Provenance Context:
+- Agent ID: {agent_id}
+- Session ID: {session_id}
+- Source Channel: {source_channel}
 
 The current relevant graph context (if any):
 {current_graph_context}

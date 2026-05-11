@@ -48,6 +48,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('schema'); // 'schema', 'memory', 'inventory'
   const viewMode = activeTab;
   const [refreshGraph, setRefreshGraph] = useState(0);
+  const [highlightedNodeId, setHighlightedNodeId] = useState(null);
 
   // Dynamic config states
   const [agentsList, setAgentsList] = useState(['global']);
@@ -322,6 +323,10 @@ function App() {
               isAssistantOpen={isAssistantOpen}
               refreshTrigger={refreshGraph} 
               onOpenIngest={() => setIsIngestModalOpen(true)}
+              onJumpToGraph={(nodeId) => {
+                setHighlightedNodeId(nodeId);
+                setActiveTab('memory');
+              }}
             />
           ) : (
             <GraphExplorer 
@@ -330,6 +335,7 @@ function App() {
               viewMode={viewMode}
               schema={schema}
               isSidebarOpen={false}
+              highlightedNodeId={highlightedNodeId}
             />
           )}
           

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { X, Plus, Save, Wand2, Loader2 } from 'lucide-react';
+import { X, Plus, Save, Wand2, Loader2, Tag, Sparkles } from 'lucide-react';
 
-export default function NodeDetailsPanel({ node, onClose, onSave }) {
+export default function NodeDetailsPanel({ node, onClose, onSave, schema }) {
   const [formData, setFormData] = useState({ id: '', label: '', properties: {} });
   const [newPropKey, setNewPropKey] = useState('');
   const [newPropVal, setNewPropVal] = useState('');
   const [suggestedProperties, setSuggestedProperties] = useState([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [isImproving, setIsImproving] = useState(false);
 
   useEffect(() => {
     if (node) {
@@ -75,6 +76,31 @@ export default function NodeDetailsPanel({ node, onClose, onSave }) {
     }
   };
 
+  const handleAutoImprove = async () => {
+    setIsImproving(true);
+    try {
+      const response = await fetch('http://localhost:8000/ontology/improve_node?agent_id=global', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: formData.label || 'Unknown',
+          properties: formData.properties
+        })
+      });
+      const data = await response.json();
+      if (data.status === 'success' && data.properties) {
+        setFormData(prev => ({
+          ...prev,
+          properties: data.properties
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to auto-improve properties:", error);
+    } finally {
+      setIsImproving(false);
+    }
+  };
+
   const renderPropertyField = (key, val) => {
     const isLongText = ['description', 'summary', 'context', 'notes', 'objective', 'content'].includes(key.toLowerCase()) || String(val).length > 50;
     
@@ -83,9 +109,14 @@ export default function NodeDetailsPanel({ node, onClose, onSave }) {
         <div key={key} className="flex-col" style={{ marginBottom: '0.75rem', padding: '0.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
             <span style={{ color: '#9ca3af', fontSize: '0.85rem', fontWeight: 500 }}>{key}</span>
-            <button onClick={() => handleRemoveProp(key)} className="btn-icon" style={{ color: '#ef4444', padding: '0.2rem' }}>
-              <X size={14} />
-            </button>
+            <div style={{ display: 'flex', gap: '0.25rem' }}>
+              <button onClick={() => handlePropChange('_display_label_key', key)} title="Set as Node Legend" className="btn-icon" style={{ color: formData.properties._display_label_key === key ? '#fbbf24' : '#64748b', padding: '0.2rem' }}>
+                <Tag size={14} />
+              </button>
+              <button onClick={() => handleRemoveProp(key)} className="btn-icon" style={{ color: '#ef4444', padding: '0.2rem' }}>
+                <X size={14} />
+              </button>
+            </div>
           </div>
           <textarea
             value={val}
@@ -106,11 +137,16 @@ export default function NodeDetailsPanel({ node, onClose, onSave }) {
         <input 
           value={val} 
           onChange={e => handlePropChange(key, e.target.value)} 
-          style={{ width: '50%', padding: '0.4rem 0.5rem' }} 
+          style={{ width: '45%', padding: '0.4rem 0.5rem' }} 
         />
-        <button onClick={() => handleRemoveProp(key)} className="btn-icon" style={{ color: '#ef4444', padding: '0.5rem', marginLeft: 'auto' }}>
-          <X size={16} />
-        </button>
+        <div style={{ display: 'flex', marginLeft: 'auto', gap: '0.25rem' }}>
+          <button onClick={() => handlePropChange('_display_label_key', key)} title="Set as Node Legend" className="btn-icon" style={{ color: formData.properties._display_label_key === key ? '#fbbf24' : '#64748b', padding: '0.5rem' }}>
+            <Tag size={14} />
+          </button>
+          <button onClick={() => handleRemoveProp(key)} className="btn-icon" style={{ color: '#ef4444', padding: '0.5rem' }}>
+            <X size={16} />
+          </button>
+        </div>
       </div>
     );
   };
@@ -118,10 +154,10 @@ export default function NodeDetailsPanel({ node, onClose, onSave }) {
   return (
     <div className="node-details-panel surface-glass flex-col" style={{
       position: 'absolute', right: '1rem', top: '4rem', width: '340px', 
-      zIndex: 'var(--z-modal)', gap: '1rem',
-      maxHeight: 'calc(100vh - 100px)', overflowY: 'auto'
+      zIndex: 'var(--z-modal)',
+      maxHeight: 'calc(100% - 5rem)', display: 'flex', flexDirection: 'column'
     }}>
-      <div className="modal-header flex-col">
+      <div className="modal-header flex-col" style={{ flexShrink: 0, borderBottom: '1px solid var(--border-light)' }}>
         <h3 className="text-h3 text-primary" style={{ margin: 0 }}>{node?.id ? 'Edit Knowledge Node' : 'New Knowledge Node'}</h3>
         <button onClick={onClose} className="btn btn-ghost" style={{ position: 'absolute', top: '1rem', right: '1rem', padding: '0.5rem' }}>
           <X size={20} />
@@ -140,19 +176,41 @@ export default function NodeDetailsPanel({ node, onClose, onSave }) {
 
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label">Label / Type</label>
-          <input 
-            value={formData.label} 
-            onChange={e => handleChange('label', e.target.value)} 
-          />
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <input 
+              value={formData.label} 
+              onChange={e => handleChange('label', e.target.value)} 
+              list="schema-classes"
+              style={{ flex: 1 }}
+            />
+            {schema?.nodes && (
+              <datalist id="schema-classes">
+                {schema.nodes.map(c => <option key={c} value={c} />)}
+              </datalist>
+            )}
+            <input 
+              type="color" 
+              value={formData.properties._display_color || '#3b82f6'} 
+              onChange={e => handlePropChange('_display_color', e.target.value)}
+              style={{ width: '40px', height: '36px', padding: 0, border: 'none', borderRadius: '4px', cursor: 'pointer', background: 'transparent' }}
+              title="Custom Node Color"
+            />
+          </div>
         </div>
 
         <div className="form-group" style={{ marginBottom: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>
             <label className="form-label" style={{ margin: 0, borderBottom: 'none', paddingBottom: 0 }}>Properties</label>
-            <button onClick={handleSuggestProperties} disabled={isSuggesting} className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', display: 'flex', gap: '0.25rem', alignItems: 'center', color: '#60a5fa' }}>
-              {isSuggesting ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
-              Suggest
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button onClick={handleSuggestProperties} disabled={isSuggesting} className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', display: 'flex', gap: '0.25rem', alignItems: 'center', color: '#60a5fa' }}>
+                {isSuggesting ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                Suggest
+              </button>
+              <button onClick={handleAutoImprove} disabled={isImproving} className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', display: 'flex', gap: '0.25rem', alignItems: 'center', color: '#a855f7' }}>
+                {isImproving ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                Auto-Improve
+              </button>
+            </div>
           </div>
           
           {suggestedProperties.length > 0 && (
@@ -169,7 +227,9 @@ export default function NodeDetailsPanel({ node, onClose, onSave }) {
           )}
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            {Object.entries(formData.properties).map(([key, val]) => renderPropertyField(key, val))}
+            {Object.entries(formData.properties)
+              .filter(([key]) => !key.startsWith('_'))
+              .map(([key, val]) => renderPropertyField(key, val))}
           </div>
           
           <div className="flex-row" style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)' }}>
@@ -177,8 +237,14 @@ export default function NodeDetailsPanel({ node, onClose, onSave }) {
               placeholder="New Key"
               value={newPropKey} 
               onChange={e => setNewPropKey(e.target.value)} 
+              list="schema-properties"
               style={{ width: '40%' }} 
             />
+            {schema?.properties && formData.label && schema.properties[formData.label] && (
+              <datalist id="schema-properties">
+                {schema.properties[formData.label].map(p => <option key={p} value={p} />)}
+              </datalist>
+            )}
             <input 
               placeholder="Value"
               value={newPropVal} 

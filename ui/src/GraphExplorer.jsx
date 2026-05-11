@@ -7,7 +7,7 @@ import CreateEdgeModal from './components/CreateEdgeModal';
 
 const API_BASE = 'http://localhost:8000';
 
-function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'memory', schema, isSidebarOpen }) {
+function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'memory', schema, isSidebarOpen, highlightedNodeId }) {
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -227,13 +227,13 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
   useEffect(() => {
     if (!loading && displayGraphData.nodes.length > 0 && fgRef.current) {
       const timer = setTimeout(() => {
-        if (fgRef.current) {
+        if (fgRef.current && !highlightedNodeId) {
           fgRef.current.zoomToFit(600, 50); // added 50px padding
         }
       }, 600); // Wait for simulation to pull nodes apart
       return () => clearTimeout(timer);
     }
-  }, [loading, displayGraphData, viewMode, agentId]);
+  }, [loading, displayGraphData, viewMode, agentId, highlightedNodeId]);
 
   const handleNodeClick = useCallback(node => {
     // Disable editing for schema nodes
@@ -241,6 +241,21 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
     setSelectedNode(node);
     setIsPanelOpen(true);
   }, [viewMode]);
+
+  useEffect(() => {
+    if (highlightedNodeId && fgRef.current && displayGraphData.nodes.length > 0) {
+      const node = displayGraphData.nodes.find(n => n.id === highlightedNodeId);
+      if (node) {
+        handleNodeClick(node);
+        setTimeout(() => {
+          if (fgRef.current) {
+            fgRef.current.centerAt(node.x, node.y, 600);
+            fgRef.current.zoom(2.5, 600);
+          }
+        }, 100);
+      }
+    }
+  }, [highlightedNodeId, displayGraphData, handleNodeClick]);
 
   const handleBackgroundClick = useCallback(() => {
     setIsPanelOpen(false);
@@ -345,6 +360,10 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
   const getNodeColor = (node) => {
     const isHighlighted = highlightNodes.has(node);
     const isDimmed = hoverNode && !isHighlighted;
+
+    if (node.properties && node.properties._display_color) {
+      return isDimmed ? 'hsla(215, 20%, 65%, 0.2)' : node.properties._display_color;
+    }
     
     let baseColor;
     if (viewMode === 'schema') {
@@ -356,9 +375,16 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
         default: baseColor = 'hsl(215, 20%, 65%)'; // text-muted
       }
     } else {
+      const hasProvenance = node.properties && (node.properties.source_channel || node.properties.session_id || node.properties.agent_id);
       switch (node.label) {
         case 'Class': baseColor = 'hsl(250, 60%, 65%)'; break; // secondary
-        default: baseColor = 'hsl(212, 100%, 60%)'; // primary
+        default: 
+          if (hasProvenance) {
+            baseColor = 'hsl(45, 100%, 50%)'; // Amber/Gold for contextual facts
+          } else {
+            baseColor = 'hsl(212, 100%, 60%)'; // primary for standard facts
+          }
+          break;
       }
     }
 
@@ -380,6 +406,12 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
     // For schema nodes
     if (viewMode === 'schema') {
       return p.name || node.id;
+    }
+
+    // Use custom label if tagged
+    if (p._display_label_key && p[p._display_label_key] !== undefined) {
+      const val = String(p[p._display_label_key]);
+      return val.length > 40 ? val.substring(0, 37) + '...' : val;
     }
 
     // For facts that have subject/predicate/object
@@ -404,17 +436,47 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
   const getTooltipHTML = (node) => {
     if (!node) return '';
     const p = node.properties || {};
-    let html = `<div style="background: rgba(0,0,0,0.8); padding: 8px; border-radius: 4px; color: white;">`;
-    html += `<strong>${node.id}</strong><br/>`;
-    html += `<small style="color:#aaa;">Label: ${node.label}</small><br/><br/>`;
+    let html = `<div style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.1); padding: 12px; border-radius: 8px; color: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); min-width: 200px; max-width: 320px;">`;
+    html += `<div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px;">`;
+    
+    if (p.source_channel || p.agent_id || p.session_id) {
+        html += `<div style="display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap;">`;
+        if (p.source_channel) {
+            html += `<span style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; border: 1px solid rgba(59, 130, 246, 0.3);">Channel: ${p.source_channel}</span>`;
+        }
+        if (p.agent_id) {
+            html += `<span style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; border: 1px solid rgba(16, 185, 129, 0.3);">Agent: ${p.agent_id}</span>`;
+        }
+        if (p.session_id) {
+             html += `<span style="background: rgba(139, 92, 246, 0.2); color: #a78bfa; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; border: 1px solid rgba(139, 92, 246, 0.3); max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${p.session_id}">Session: ${p.session_id}</span>`;
+        }
+        html += `</div>`;
+    }
+
+    html += `<span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; font-weight: 600;">${node.label}</span>`;
+    html += `<strong style="font-size: 1rem; color: #fff; word-break: break-word; line-height: 1.3;">${node.id}</strong>`;
+    html += `</div>`;
+    
     if (Object.keys(p).length > 0) {
-      html += `<table style="font-size: 0.8rem; text-align: left; border-spacing: 4px;">`;
+      html += `<div style="display: flex; flex-direction: column; gap: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 12px;">`;
       for (const [k, v] of Object.entries(p)) {
-        html += `<tr><td style="color:#888;">${k}</td><td>${v}</td></tr>`;
+        if (['source_channel', 'agent_id', 'session_id'].includes(k)) continue;
+        
+        let displayValue = v;
+        if (k === 'timestamp' && typeof v === 'number') {
+            displayValue = new Date(v * 1000).toLocaleString();
+        } else {
+            displayValue = String(v).length > 100 ? String(v).substring(0, 97) + '...' : v;
+        }
+
+        html += `<div style="display: flex; flex-direction: column; gap: 2px;">`;
+        html += `<span style="font-size: 0.7rem; color: #94a3b8; font-weight: 500;">${k}</span>`;
+        html += `<span style="font-size: 0.85rem; color: #e2e8f0; word-break: break-word; line-height: 1.4;">${displayValue}</span>`;
+        html += `</div>`;
       }
-      html += `</table>`;
+      html += `</div>`;
     } else {
-      html += `<i style="font-size: 0.8rem; color:#888;">No properties</i>`;
+      html += `<div style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 12px; font-size: 0.8rem; color: #64748b; font-style: italic;">No properties</div>`;
     }
     html += `</div>`;
     return html;
@@ -609,6 +671,7 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
           node={selectedNode} 
           onClose={() => setIsPanelOpen(false)} 
           onSave={handleSaveNode} 
+          schema={schema}
         />
       )}
 
@@ -618,6 +681,7 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
           targetNode={edgeModal.target}
           onConfirm={handleCreateEdge}
           onCancel={() => setEdgeModal(null)}
+          schema={schema}
         />
       )}
 
@@ -669,6 +733,10 @@ function GraphExplorer({ agentId = 'global', refreshTrigger = 0, viewMode = 'mem
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
                   <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'hsl(212, 100%, 60%)' }} />
                   <span>Entity (Fact)</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'hsl(45, 100%, 50%)' }} />
+                  <span>Contextual Fact</span>
                 </div>
               </>
             )}

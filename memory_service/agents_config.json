@@ -6,7 +6,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   },
   "support": {
@@ -18,7 +19,8 @@
       "search_raw_history",
       "search_knowledge_graph",
       "create_ticket",
-      "query_tickets"
+      "query_tickets",
+      "save_semantic_memory"
     ],
     "action_templates": [
       {
@@ -66,7 +68,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   },
   "legal_assistant": {
@@ -76,7 +79,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   },
   "cv_analyzer": {
@@ -86,7 +90,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   },
   "career_agent": {
@@ -96,7 +101,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   },
   "team_support_agent": {
@@ -106,7 +112,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   },
   "stress_agent": {
@@ -114,7 +121,8 @@
     "instruction": "You are a senior analyst. Answer queries thoroughly based on the knowledge graph facts.",
     "tools": [
       "search_knowledge_graph",
-      "search_raw_history"
+      "search_raw_history",
+      "save_semantic_memory"
     ]
   },
   "demo_restaurant": {
@@ -124,7 +132,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   },
   "demo_factory": {
@@ -134,7 +143,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   },
   "demo_hr": {
@@ -144,7 +154,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   },
   "demo_software": {
@@ -154,7 +165,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   },
   "global": {
@@ -164,7 +176,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ],
     "channels": {
       "discord": {
@@ -188,7 +201,8 @@
       "save_memory_to_graph",
       "update_node_properties",
       "search_raw_history",
-      "search_knowledge_graph"
+      "search_knowledge_graph",
+      "save_semantic_memory"
     ]
   }
 }

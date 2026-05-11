@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Database, Loader2, PackageOpen, Search, Filter, Calendar, Tag, AlertCircle, X, Edit2, Save, Plus, Wand2 } from 'lucide-react';
+import { Database, Loader2, PackageOpen, Search, Filter, Calendar, Tag, AlertCircle, X, Edit2, Save, Plus, Wand2, Sparkles, Network } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000';
 
-function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssistantOpen, refreshTrigger = 0, onOpenIngest }) {
+function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssistantOpen, refreshTrigger = 0, onOpenIngest, onJumpToGraph }) {
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -19,6 +19,34 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
   const [newPropVal, setNewPropVal] = useState('');
   const [suggestedProperties, setSuggestedProperties] = useState([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [isImproving, setIsImproving] = useState(false);
+  const [showConnectionForm, setShowConnectionForm] = useState(false);
+  const [newConnectionTarget, setNewConnectionTarget] = useState('');
+  const [newConnectionPredicate, setNewConnectionPredicate] = useState('');
+  const [suggestedConnections, setSuggestedConnections] = useState([]);
+  const [isSuggestingConnections, setIsSuggestingConnections] = useState(false);
+  
+  const [isOperationalizing, setIsOperationalizing] = useState(false);
+  const [generatedTemplate, setGeneratedTemplate] = useState(null);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+
+  const entityContext = useMemo(() => {
+    if (!selectedItem || !graphData) return '';
+    const relevantLinks = graphData.links.filter(l => l.source === selectedItem.id || l.target === selectedItem.id);
+    if (relevantLinks.length === 0) return 'No direct relations found in the graph.';
+    
+    return relevantLinks.map(l => {
+      const isSource = l.source === selectedItem.id;
+      const otherNodeId = isSource ? l.target : l.source;
+      const otherNode = graphData.nodes.find(n => n.id === otherNodeId) || { label: 'Unknown', id: otherNodeId };
+      const relation = l.relation || l.label || 'CONNECTED_TO';
+      const otherTitle = otherNode.properties?.title || otherNode.properties?.name || otherNode.id;
+      return isSource 
+        ? `[This Entity] --${relation}--> [${otherNode.label}: ${otherTitle}]`
+        : `[${otherNode.label}: ${otherTitle}] --${relation}--> [This Entity]`;
+    }).join('\n');
+  }, [selectedItem, graphData]);
 
   useEffect(() => {
     setIsEditing(false);
@@ -26,6 +54,14 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
     setNewPropVal('');
     setSuggestedProperties([]);
     setIsSuggesting(false);
+    setIsImproving(false);
+    setShowConnectionForm(false);
+    setNewConnectionTarget('');
+    setNewConnectionPredicate('');
+    setSuggestedConnections([]);
+    setIsSuggestingConnections(false);
+    setGeneratedTemplate(null);
+    setShowTemplateModal(false);
     if (selectedItem) {
       setEditFormData({
         id: selectedItem.id,
@@ -81,6 +117,35 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
     }
   };
 
+  const handleSaveConnection = async () => {
+    if (!newConnectionTarget || !newConnectionPredicate) return;
+    try {
+      setRefreshing(true);
+      const res = await fetch(`${API_BASE}/graph/edge?agent_id=${agentId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: selectedItem.id,
+          target: newConnectionTarget,
+          relation: newConnectionPredicate,
+          properties: {}
+        })
+      });
+      if (res.ok) {
+        setShowConnectionForm(false);
+        setNewConnectionTarget('');
+        setNewConnectionPredicate('');
+        fetchGraphData();
+      } else {
+        console.error('Failed to save connection');
+      }
+    } catch (e) {
+      console.error('Error saving connection:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleEditPropChange = (key, val) => {
     setEditFormData(prev => ({
       ...prev,
@@ -112,7 +177,8 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           label: editFormData?.label || 'Unknown',
-          properties: editFormData?.properties || {}
+          properties: editFormData?.properties || {},
+          context: entityContext
         })
       });
       const data = await response.json();
@@ -123,6 +189,110 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
       console.error("Failed to fetch suggestions:", error);
     } finally {
       setIsSuggesting(false);
+    }
+  };
+
+  const handleImproveNode = async () => {
+    setIsImproving(true);
+    try {
+      const response = await fetch(`${API_BASE}/ontology/improve_node?agent_id=${agentId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: editFormData?.label || 'Unknown',
+          properties: editFormData?.properties || {},
+          context: entityContext
+        })
+      });
+      const data = await response.json();
+      if (data.status === 'success' && data.properties) {
+        setEditFormData(prev => ({
+          ...prev,
+          properties: data.properties
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to improve entity:", error);
+    } finally {
+      setIsImproving(false);
+    }
+  };
+
+  const handleSuggestConnections = async () => {
+    setIsSuggestingConnections(true);
+    try {
+      const response = await fetch(`${API_BASE}/ontology/suggest_connections?agent_id=${agentId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: selectedItem?.label || 'Unknown',
+          properties: selectedItem?.properties || {},
+          context: entityContext
+        })
+      });
+      const data = await response.json();
+      if (data.status === 'success' && data.suggestions) {
+        setSuggestedConnections(data.suggestions);
+        setShowConnectionForm(true); // Open form to show suggestions
+      }
+    } catch (error) {
+      console.error("Failed to fetch connection suggestions:", error);
+    } finally {
+      setIsSuggestingConnections(false);
+    }
+  };
+
+  const handleOperationalizeContext = async () => {
+    setIsOperationalizing(true);
+    try {
+      // Create a specific subgraph context for the prompt
+      const nodeData = {
+        id: selectedItem.id,
+        label: selectedItem.label,
+        properties: selectedItem.properties
+      };
+      
+      const response = await fetch(`${API_BASE}/agent/${agentId}/action_template/generate_from_context`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          node_data: nodeData,
+          context: entityContext,
+          intent: "Create a reusable action based on this node and its relations."
+        })
+      });
+      const data = await response.json();
+      if (data.status === 'success' && data.action_template) {
+        setGeneratedTemplate(data.action_template);
+        setShowTemplateModal(true);
+      }
+    } catch (error) {
+      console.error("Failed to generate action template:", error);
+    } finally {
+      setIsOperationalizing(false);
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!generatedTemplate) return;
+    setIsSavingTemplate(true);
+    try {
+      const response = await fetch(`${API_BASE}/agents/${agentId}/action_templates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(generatedTemplate)
+      });
+      const data = await response.json();
+      if (data.status === 'success') {
+        setShowTemplateModal(false);
+        setGeneratedTemplate(null);
+      } else {
+         console.error("Failed to save template:", data.message);
+      }
+    } catch (error) {
+      console.error("Error saving action template:", error);
+    } finally {
+      setIsSavingTemplate(false);
     }
   };
 
@@ -489,6 +659,14 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
                </h3>
              </div>
              <div style={{ display: 'flex', gap: '0.5rem' }}>
+               <button onClick={handleOperationalizeContext} disabled={isOperationalizing} className="btn-icon" style={{ background: 'rgba(168, 85, 247, 0.2)', padding: '0.5rem', borderRadius: '50%', color: '#d8b4fe' }} title="Operationalize Context">
+                 {isOperationalizing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+               </button>
+               {onJumpToGraph && (
+                 <button onClick={() => onJumpToGraph(selectedItem.id)} className="btn-icon" style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%', color: '#60a5fa' }} title="Jump to Graph">
+                   <Network size={16} />
+                 </button>
+               )}
                {!isEditing ? (
                  <button onClick={() => setIsEditing(true)} className="btn-icon" style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%' }} title="Edit Entity">
                    <Edit2 size={16} />
@@ -507,6 +685,13 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
           {!isEditing ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                {Object.entries(selectedItem.properties || {}).map(([k, v]) => renderCardProperty(k, v))}
+               
+               <div style={{ fontSize: '0.85rem', marginBottom: '0.5rem', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                 <div style={{ color: '#6b7280', marginBottom: '0.5rem', textTransform: 'uppercase', fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.05em' }}>Graph Context</div>
+                 <pre style={{ color: '#9ca3af', lineHeight: '1.4', background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                   {entityContext}
+                 </pre>
+               </div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -524,10 +709,16 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
                
                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                  <label className="form-label" style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: 0 }}>Properties</label>
-                 <button onClick={handleSuggestProperties} disabled={isSuggesting} className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', display: 'flex', gap: '0.25rem', alignItems: 'center', color: '#60a5fa' }}>
-                   {isSuggesting ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
-                   Suggest
-                 </button>
+                 <div style={{ display: 'flex', gap: '0.5rem' }}>
+                   <button onClick={handleImproveNode} disabled={isImproving} className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', display: 'flex', gap: '0.25rem', alignItems: 'center', color: '#c084fc' }}>
+                     {isImproving ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                     Improve
+                   </button>
+                   <button onClick={handleSuggestProperties} disabled={isSuggesting} className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', display: 'flex', gap: '0.25rem', alignItems: 'center', color: '#60a5fa' }}>
+                     {isSuggesting ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                     Suggest
+                   </button>
+                 </div>
                </div>
                
                {suggestedProperties.length > 0 && (
@@ -544,40 +735,74 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
                )}
 
                
-               {Object.entries(editFormData?.properties || {}).map(([key, val]) => {
-                 const isLongText = ['description', 'summary', 'context', 'notes', 'objective', 'content'].includes(key.toLowerCase()) || String(val).length > 50;
-                 return isLongText ? (
-                   <div key={key} className="flex-col" style={{ padding: '0.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                       <span style={{ color: '#9ca3af', fontSize: '0.8rem', fontWeight: 500 }}>{key}</span>
-                       <button onClick={() => handleRemoveProp(key)} className="btn-icon" style={{ color: '#ef4444', padding: '0.2rem' }}><X size={14} /></button>
+               {(() => {
+                 const schemaProps = schema?.properties?.[editFormData?.label] || [];
+                 const uiLayout = schema?.ui_layout?.[editFormData?.label] || {};
+                 const allPropKeys = Array.from(new Set([...schemaProps, ...Object.keys(editFormData?.properties || {})]));
+                 
+                 return allPropKeys.map((key) => {
+                   const val = editFormData?.properties?.[key] || '';
+                   const layoutHint = uiLayout[key];
+                   const isSelect = layoutHint?.startsWith('select:');
+                   const selectOptions = isSelect ? layoutHint.replace('select:', '').split(',') : [];
+                   
+                   const isLongText = layoutHint === 'textarea' || ['description', 'summary', 'context', 'notes', 'objective', 'content'].includes(key.toLowerCase()) || String(val).length > 50;
+                   const isSchemaProp = schemaProps.includes(key);
+
+                   return (isLongText || isSelect) ? (
+                     <div key={key} className="flex-col" style={{ padding: '0.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                         <span style={{ color: isSchemaProp ? '#e5e7eb' : '#9ca3af', fontSize: '0.8rem', fontWeight: 500 }}>
+                           {key} {isSchemaProp && <span style={{ color: '#3b82f6', fontSize: '0.7rem', marginLeft: '0.2rem' }}>(schema)</span>}
+                         </span>
+                         {!isSchemaProp && <button onClick={() => handleRemoveProp(key)} className="btn-icon" style={{ color: '#ef4444', padding: '0.2rem' }}><X size={14} /></button>}
+                       </div>
+                       {isSelect ? (
+                         <select
+                           className="input-field"
+                           value={val}
+                           onChange={e => handleEditPropChange(key, e.target.value)}
+                           style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '0.5rem', color: '#e5e7eb' }}
+                         >
+                           <option value="" style={{ color: '#9ca3af' }}>Select {key}...</option>
+                           {selectOptions.map(opt => (
+                             <option key={opt} value={opt} style={{ color: '#111827' }}>{opt}</option>
+                           ))}
+                         </select>
+                       ) : (
+                         <textarea
+                           className="input-field"
+                           value={val}
+                           onChange={e => handleEditPropChange(key, e.target.value)}
+                           style={{ width: '100%', minHeight: '80px', resize: 'vertical', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '0.5rem' }}
+                         />
+                       )}
                      </div>
-                     <textarea
-                       className="input-field"
-                       value={val}
-                       onChange={e => handleEditPropChange(key, e.target.value)}
-                       style={{ width: '100%', minHeight: '80px', resize: 'vertical', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '0.5rem' }}
-                     />
-                   </div>
-                 ) : (
-                   <div key={key} className="flex-row" style={{ alignItems: 'center', gap: '0.5rem' }}>
-                     <input 
-                       readOnly 
-                       value={key}
-                       style={{ width: '35%', fontSize: '0.8rem', color: '#9ca3af', background: 'transparent', border: 'none' }} 
-                     />
-                     <input 
-                       className="input-field"
-                       value={val} 
-                       onChange={e => handleEditPropChange(key, e.target.value)} 
-                       style={{ width: '50%', padding: '0.4rem', backgroundColor: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)' }} 
-                     />
-                     <button onClick={() => handleRemoveProp(key)} className="btn-icon" style={{ color: '#ef4444', padding: '0.4rem', marginLeft: 'auto' }}>
-                       <X size={14} />
-                     </button>
-                   </div>
-                 );
-               })}
+                   ) : (
+                     <div key={key} className="flex-row" style={{ alignItems: 'center', gap: '0.5rem' }}>
+                       <div style={{ width: '35%', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                         <input 
+                           readOnly 
+                           value={key}
+                           style={{ width: '100%', fontSize: '0.8rem', color: isSchemaProp ? '#e5e7eb' : '#9ca3af', background: 'transparent', border: 'none', textOverflow: 'ellipsis' }} 
+                           title={key}
+                         />
+                       </div>
+                       <input 
+                         className="input-field"
+                         value={val} 
+                         onChange={e => handleEditPropChange(key, e.target.value)} 
+                         style={{ width: '50%', padding: '0.4rem', backgroundColor: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)' }} 
+                       />
+                       {!isSchemaProp && (
+                         <button onClick={() => handleRemoveProp(key)} className="btn-icon" style={{ color: '#ef4444', padding: '0.4rem', marginLeft: 'auto' }}>
+                           <X size={14} />
+                         </button>
+                       )}
+                     </div>
+                   );
+                 });
+               })()}
                
                <div className="flex-row" style={{ marginTop: '0.5rem', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)', gap: '0.5rem' }}>
                  <input 
@@ -600,11 +825,172 @@ function InventoryExplorer({ agentId = 'global', schema, isSidebarOpen, isAssist
                  </button>
                </div>
                
+               <div style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', margin: '1rem 0' }}></div>
+               <div style={{ marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                 <label className="form-label" style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: 0 }}>Connections</label>
+                 <div style={{ display: 'flex', gap: '0.5rem' }}>
+                   <button onClick={handleSuggestConnections} disabled={isSuggestingConnections} className="btn-icon" style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#d8b4fe', padding: '0.3rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                     {isSuggestingConnections ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} Suggest
+                   </button>
+                   <button onClick={() => setShowConnectionForm(!showConnectionForm)} className="btn-icon" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#93c5fd', padding: '0.3rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                     <Network size={12} /> {showConnectionForm ? 'Cancel' : 'Add'}
+                   </button>
+                 </div>
+               </div>
+               
+               {showConnectionForm && (
+                 <div style={{ padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                   <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Create new connection from this entity to another.</div>
+                   
+                   {suggestedConnections.length > 0 && (
+                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                       {suggestedConnections.map((sug, idx) => (
+                         <button key={idx} onClick={() => {
+                           // Find target node id based on label
+                           const targetNode = graphData.nodes.find(n => n.label === sug.target_label && n.id !== selectedItem.id);
+                           if (targetNode) {
+                             setNewConnectionTarget(targetNode.id);
+                           }
+                           setNewConnectionPredicate(sug.predicate);
+                           setSuggestedConnections(prev => prev.filter((_, i) => i !== idx));
+                         }} style={{ background: 'rgba(168, 85, 247, 0.2)', border: '1px solid rgba(168, 85, 247, 0.4)', borderRadius: '12px', padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: '#e9d5ff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: '0.25rem' }}>
+                           <div style={{ fontWeight: 600 }}>{sug.predicate} &rarr; {sug.target_label}</div>
+                           <div style={{ fontSize: '0.65rem', color: '#d8b4fe', opacity: 0.8 }}>{sug.reason}</div>
+                         </button>
+                       ))}
+                     </div>
+                   )}
+
+                   <select
+                     className="input-field"
+                     value={newConnectionTarget}
+                     onChange={e => setNewConnectionTarget(e.target.value)}
+                     style={{ padding: '0.4rem', backgroundColor: 'rgba(0,0,0,0.2)' }}
+                   >
+                     <option value="">Select Target Node...</option>
+                     {graphData.nodes.filter(n => n.id !== selectedItem.id).map(n => (
+                       <option key={n.id} value={n.id}>{n.label}: {n.properties?.title || n.properties?.name || n.id}</option>
+                     ))}
+                   </select>
+
+                   <input
+                     className="input-field"
+                     list="schema-predicates"
+                     placeholder="Relation Predicate (e.g., HAS_TICKET)"
+                     value={newConnectionPredicate}
+                     onChange={e => setNewConnectionPredicate(e.target.value)}
+                     style={{ padding: '0.4rem', backgroundColor: 'rgba(0,0,0,0.2)' }}
+                   />
+                   <datalist id="schema-predicates">
+                     {schema?.predicates?.map(p => <option key={p} value={p} />)}
+                   </datalist>
+
+                   <button 
+                     onClick={handleSaveConnection} 
+                     disabled={!newConnectionTarget || !newConnectionPredicate || refreshing}
+                     className="btn btn-primary" 
+                     style={{ marginTop: '0.5rem', padding: '0.4rem', fontSize: '0.8rem', justifyContent: 'center' }}
+                   >
+                     {refreshing ? <Loader2 size={14} className="animate-spin" /> : 'Save Connection'}
+                   </button>
+                 </div>
+               )}
+
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '150px', overflowY: 'auto' }}>
+                 {graphData.links.filter(l => l.source === selectedItem.id || l.target === selectedItem.id).length === 0 ? (
+                   <div style={{ color: '#6b7280', fontSize: '0.8rem', fontStyle: 'italic' }}>No connections found.</div>
+                 ) : (
+                   graphData.links.filter(l => l.source === selectedItem.id || l.target === selectedItem.id).map((l, i) => {
+                     const isSource = l.source === selectedItem.id;
+                     const otherNodeId = isSource ? l.target : l.source;
+                     const otherNode = graphData.nodes.find(n => n.id === otherNodeId) || { label: 'Unknown', id: otherNodeId };
+                     const otherTitle = otherNode.properties?.title || otherNode.properties?.name || otherNode.id;
+                     return (
+                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', fontSize: '0.75rem', color: '#d1d5db' }}>
+                         {isSource ? (
+                           <><span style={{ color: '#9ca3af' }}>[This]</span> <span style={{ color: '#c084fc' }}>--{l.relation || l.label}--&gt;</span> <span>{otherNode.label}: {otherTitle}</span></>
+                         ) : (
+                           <><span>{otherNode.label}: {otherTitle}</span> <span style={{ color: '#c084fc' }}>--{l.relation || l.label}--&gt;</span> <span style={{ color: '#9ca3af' }}>[This]</span></>
+                         )}
+                       </div>
+                     );
+                   })
+                 )}
+               </div>
+               
                <button onClick={handleSaveEntity} className="btn btn-primary" style={{ marginTop: '1rem', justifyContent: 'center' }}>
                  <Save size={16} style={{ marginRight: '0.5rem' }} /> Save Entity
                </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Template Review Modal */}
+      {showTemplateModal && generatedTemplate && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+          <div className="glass-panel" style={{ width: '600px', maxWidth: '90vw', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', borderRadius: '1rem', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Sparkles className="text-purple-400" size={20} /> Review Action Template
+              </h3>
+              <button onClick={() => setShowTemplateModal(false)} className="btn-icon">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <p style={{ color: '#9ca3af', fontSize: '0.9rem', margin: 0 }}>
+              The following custom tool has been generated based on the selected subgraph context. Once saved, the agent will immediately be able to use this tool.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
+              <div>
+                <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.8rem', marginBottom: '0.25rem' }}>Tool Name</label>
+                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', color: '#f8fafc', fontFamily: 'monospace' }}>
+                  {generatedTemplate.tool_name}
+                </div>
+              </div>
+              
+              <div>
+                <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.8rem', marginBottom: '0.25rem' }}>Description</label>
+                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', color: '#d1d5db', fontSize: '0.9rem' }}>
+                  {generatedTemplate.description}
+                </div>
+              </div>
+
+              {generatedTemplate.parameters && Object.keys(generatedTemplate.parameters).length > 0 && (
+                <div>
+                  <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.8rem', marginBottom: '0.25rem' }}>Parameters</label>
+                  <div style={{ background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    {Object.entries(generatedTemplate.parameters).map(([key, details]) => (
+                      <div key={key} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.25rem', fontSize: '0.85rem' }}>
+                        <span style={{ color: '#60a5fa', fontWeight: 600 }}>{key}</span>
+                        <span style={{ color: '#9ca3af' }}>({details.type}):</span>
+                        <span style={{ color: '#d1d5db' }}>{details.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.8rem', marginBottom: '0.25rem' }}>Cypher Query</label>
+                <pre style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', color: '#a78bfa', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                  {generatedTemplate.cypher_query}
+                </pre>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
+              <button onClick={() => setShowTemplateModal(false)} className="btn btn-ghost" disabled={isSavingTemplate}>
+                Cancel
+              </button>
+              <button onClick={handleSaveTemplate} className="btn btn-primary" disabled={isSavingTemplate}>
+                {isSavingTemplate ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                <span style={{ marginLeft: '0.5rem' }}>Save to Agent</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

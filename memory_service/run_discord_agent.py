@@ -100,12 +100,18 @@ def start_discord_agent(agent_id: str):
                     from google.adk import Runner
                     from google.adk.sessions import InMemorySessionService
                     from google.genai import types
+                    from adk_agents import current_session_id, current_source_channel
                     
                     if not hasattr(client, "session_service"):
                         client.session_service = InMemorySessionService()
                         
-                    runner = Runner(agent=agent, app_name="vento", session_service=client.session_service)
                     session_id = f"discord_channel_{message.channel.id}"
+                    
+                    # Set the context variables for semantic memory extraction
+                    current_session_id.set(session_id)
+                    current_source_channel.set("discord")
+                    
+                    runner = Runner(agent=agent, app_name="vento", session_service=client.session_service)
                     
                     session = await client.session_service.get_session(
                         app_name="vento",

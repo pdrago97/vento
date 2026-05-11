@@ -10,8 +10,12 @@ from graph_client import get_schema_client
 # import ADK
 from google.adk.agents.llm_agent import Agent
 
+import contextvars
 import json
 from history_db import search_history
+
+current_session_id = contextvars.ContextVar("current_session_id", default="unknown_session")
+current_source_channel = contextvars.ContextVar("current_source_channel", default="unknown_channel")
 
 # Define the tool
 async def save_memory_to_graph(agent_id: str, subject: str, predicate: str, object_val: str, properties_json: str = "{}"):
@@ -33,6 +37,11 @@ async def save_memory_to_graph(agent_id: str, subject: str, predicate: str, obje
     except Exception:
         properties = {}
         
+    properties["agent_id"] = agent_id
+    properties["timestamp"] = time.time()
+    properties["session_id"] = current_session_id.get()
+    properties["source_channel"] = current_source_channel.get()
+        
     # Generate simple IDs
     sub_id = subject.replace(" ", "_").lower()
     obj_id = object_val.replace(" ", "_").lower()
@@ -41,14 +50,14 @@ async def save_memory_to_graph(agent_id: str, subject: str, predicate: str, obje
     await client.upsert_node(
         node_id=sub_id,
         label="Entity",
-        properties={"name": subject}
+        properties={"name": subject, "agent_id": agent_id, "timestamp": properties["timestamp"]}
     )
     
     # Save Object Node
     await client.upsert_node(
         node_id=obj_id,
         label="Entity",
-        properties={"name": object_val}
+        properties={"name": object_val, "agent_id": agent_id, "timestamp": properties["timestamp"]}
     )
     
     # Save Edge
@@ -80,6 +89,11 @@ async def save_semantic_memory(agent_id: str, subject_name: str, subject_class: 
         properties = json.loads(properties_json)
     except Exception:
         properties = {}
+        
+    properties["agent_id"] = agent_id
+    properties["timestamp"] = time.time()
+    properties["session_id"] = current_session_id.get()
+    properties["source_channel"] = current_source_channel.get()
         
     # Check and Expand Ontology
     from ontology_manager import ontology_manager
@@ -116,14 +130,14 @@ async def save_semantic_memory(agent_id: str, subject_name: str, subject_class: 
     await client.upsert_node(
         node_id=sub_id,
         label=sub_class,
-        properties={"name": subject_name}
+        properties={"name": subject_name, "agent_id": agent_id, "timestamp": properties["timestamp"]}
     )
     
     # Save Object Node
     await client.upsert_node(
         node_id=obj_id,
         label=obj_class,
-        properties={"name": object_name}
+        properties={"name": object_name, "agent_id": agent_id, "timestamp": properties["timestamp"]}
     )
     
     # Save Edge

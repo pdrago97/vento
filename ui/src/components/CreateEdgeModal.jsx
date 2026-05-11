@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, X } from 'lucide-react';
 
-export default function CreateEdgeModal({ sourceNode, targetNode, onConfirm, onCancel }) {
+export default function CreateEdgeModal({ sourceNode, targetNode, onConfirm, onCancel, schema }) {
   const [relation, setRelation] = useState('');
 
   return (
@@ -29,7 +29,13 @@ export default function CreateEdgeModal({ sourceNode, targetNode, onConfirm, onC
               value={relation} 
               onChange={e => setRelation(e.target.value)} 
               onKeyDown={e => e.key === 'Enter' && relation.trim() && onConfirm(relation.trim())}
+              list="schema-predicates"
             />
+            {schema?.predicates && (
+              <datalist id="schema-predicates">
+                {schema.predicates.map(p => <option key={p} value={p} />)}
+              </datalist>
+            )}
           </div>
 
           <div className="modal-footer">

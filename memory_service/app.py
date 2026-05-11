@@ -171,6 +171,13 @@ class AgentGeneratePayload(BaseModel):
     description: str
     current_config: dict | None = None
 
+class AgentWizardPayload(BaseModel):
+    goal: str
+    domain: str = ""
+    complexity: str = ""
+    current_ontology: dict | None = None
+    answers: dict | None = None
+
 @app.get("/agents")
 def list_agents():
     return {"agents": get_all_agents()}
@@ -317,6 +324,61 @@ def get_agent_runner_status(agent_id: str):
     return {"status": "success", "active": is_active}
 
 
+@app.post("/agents/wizard/refine")
+def refine_agent_wizard(payload: AgentWizardPayload):
+    if not client:
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+        
+    import json
+    
+    context_str = ""
+    if payload.current_ontology:
+        context_str += f"\nCurrent Ontology:\n{json.dumps(payload.current_ontology, indent=2)}\n"
+    if payload.answers:
+        context_str += f"\nUser Answers to Follow-up Questions:\n{json.dumps(payload.answers, indent=2)}\n"
+
+    prompt = f"""You are an AI assistant helping a user build and refine a new agent for a knowledge graph system.
+The user is using a multi-turn wizard.
+Goal: {payload.goal}
+Domain: {payload.domain}
+Complexity: {payload.complexity}
+{context_str}
+
+Available standard tools the agent can use: {list(AVAILABLE_TOOLS.keys())}
+
+Generate a JSON object with the following fields:
+- "agent_id": A short, lowercase string with underscores (no spaces) to uniquely identify the agent.
+- "name": A human-readable display name for the agent.
+- "instruction": The system prompt/instruction for the agent.
+- "tools": An array of standard tool names from the available standard tools list.
+- "ontology": An ontology schema tailored for this agent. It must contain:
+    - "nodes": an array of class strings
+    - "predicates": an array of relation strings
+    - "properties": a dictionary mapping node class names to arrays of property string names
+- "follow_up_questions": An array of questions to further refine the agent's ontology or instructions. If the current ontology and instructions are already highly refined based on user answers, you can return an empty array. Each question should have:
+    - "id": A unique string id for the question (e.g. "q1")
+    - "question": The question text
+    - "type": The expected input type (e.g. "text", "boolean")
+
+Return ONLY the JSON object, without any markdown formatting like ```json.
+"""
+    try:
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-lite',
+            contents=prompt
+        )
+        
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+        
+        config = json.loads(text.strip())
+        return {"status": "success", "config": config}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/agents/generate")
 def generate_agent(payload: AgentGeneratePayload):
     if not client:
@@ -418,19 +480,26 @@ User request: {payload.message}
 class SuggestPropertiesPayload(BaseModel):
     label: str
     properties: dict
+    context: str | None = None
 
 @app.post("/ontology/suggest_properties")
 def suggest_properties(payload: SuggestPropertiesPayload, agent_id: str = "global"):
     if not client:
         return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
         
+    schema = ontology_manager.get_schema(agent_id)
+    import json
+    schema_str = f"\nOntology Schema:\n{json.dumps(schema, indent=2)}\n" if schema else ""
+    context_str = f"\nRelevant Context / Known Facts:\n{payload.context}\n" if payload.context else ""
+        
     prompt = f"""You are a Graph Database Schema Assistant. 
 The user is editing a node/entity with the label/type: '{payload.label}'
-
+{schema_str}
 The current properties of this entity are:
-{payload.properties}
+{payload.properties}{context_str}
 
-Suggest 3 to 5 new relevant property keys that would be useful to add to this entity to further organize and orchestrate data.
+Suggest 3 to 5 new relevant property keys that would be useful to add to this entity.
+Crucially, if the Ontology Schema defines properties for the class '{payload.label}', prioritize suggesting those exact properties if they are not already present.
 For each suggested property, provide a realistic default value or a very short description (e.g. placeholder) for what it should contain.
 Do NOT suggest properties that already exist in the current properties list.
 
@@ -461,6 +530,59 @@ Do not include any markdown formatting like ```json.
         traceback.print_exc()
         return {"status": "error", "message": str(e)}
 
+
+
+class ImproveNodePayload(BaseModel):
+    label: str
+    properties: dict
+    context: str | None = None
+
+@app.post("/ontology/improve_node")
+def improve_node(payload: ImproveNodePayload, agent_id: str = "global"):
+    if not client:
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+        
+    schema = ontology_manager.get_schema(agent_id)
+    import json
+    schema_str = f"\nOntology Schema:\n{json.dumps(schema, indent=2)}\n" if schema else ""
+    context_str = f"\nRelevant Context / Known Facts:\n{payload.context}\n" if payload.context else ""
+
+    prompt = f"""You are a Knowledge Graph Data Curator. 
+The user is editing a node with the label/type: '{payload.label}'
+{schema_str}
+The current properties of this entity are:
+{payload.properties}{context_str}
+
+Your task is to verify, clean, and improve these properties. 
+- Consolidate redundant fields.
+- Fix typos or obvious errors.
+- Ensure there is a good descriptive 'title' or 'name' property.
+- Summarize overly long text fields if they are verbose, perhaps adding a 'summary' field.
+- Keep system keys like 'timestamp', 'source_channel', 'agent_id', 'session_id' intact without modification.
+- If the Ontology Schema defines properties for '{payload.label}', ensure your improved properties align well with those expected keys.
+
+Return ONLY a JSON object containing the improved properties dictionary.
+Do not include any markdown formatting like ```json.
+"""
+    try:
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-lite',
+            contents=prompt
+        )
+        
+        import json
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+        
+        improved_properties = json.loads(text.strip())
+        return {"status": "success", "properties": improved_properties}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
 
 class CurateInsightsPayload(BaseModel):
     interactions: list[dict]
@@ -572,7 +694,15 @@ async def ingest_document(agent_id: str, file: UploadFile = File(...)):
         current_schema = ontology_manager.get_schema(agent_id)
         
         try:
-            analysis_result = await analyze_document_for_ontology(temp_filepath, file.filename, text, current_schema)
+            analysis_result = await analyze_document_for_ontology(
+                temp_filepath, 
+                file.filename, 
+                text, 
+                current_schema, 
+                agent_id=agent_id, 
+                session_id="ingestion_session", 
+                source_channel=f"document_{file.filename}"
+            )
         finally:
             if os.path.exists(temp_filepath):
                 os.remove(temp_filepath)
@@ -637,7 +767,16 @@ async def chat_agent(agent_id: str, message: str = Form(None), file: UploadFile 
         # Get some current context if necessary, or pass empty dict
         current_graph_context = {}
         
-        result = await chat_multimodal_memory(temp_filepath, filename, text, current_graph_context, message or "")
+        result = await chat_multimodal_memory(
+            temp_filepath, 
+            filename, 
+            text, 
+            current_graph_context, 
+            message or "",
+            agent_id=agent_id,
+            session_id="multimodal_session",
+            source_channel="internal_ui"
+        )
         
         await log_and_store_interaction(agent_id, "multimodal_session", "assistant", "message", str(result))
         
@@ -772,13 +911,18 @@ Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
             runner = Runner(agent=admin_agent, app_name="vento", session_service=global_session_service)
             session_id = f"session_admin_{agent_id}"
             
+            from adk_agents import current_session_id, current_source_channel
+            current_session_id.set(session_id)
+            current_source_channel.set("internal_ui")
+            
             session = await global_session_service.get_session(app_name="vento", user_id="default", session_id=session_id)
             if session is None:
                 await global_session_service.create_session(app_name="vento", user_id="default", session_id=session_id)
             
             await log_and_store_interaction(agent_id, session_id, "user", "message", message or "Hello", metadata={"channel": "internal_ui"})
             
-            msg = types.Content(role="user", parts=[types.Part.from_text(text=message or "Hello")])
+            context_prefix = f"[Context: source_channel='internal_ui', session_id='{session_id}', agent_id='{agent_id}']\n"
+            msg = types.Content(role="user", parts=[types.Part.from_text(text=context_prefix + (message or "Hello"))])
             metadata = {"channel": "internal_ui", "tokens": 0, "reasoning": "", "tool_calls": [], "tool_outputs": []}
             async for event in runner.run_async(user_id="default", session_id=session_id, new_message=msg):
                 if getattr(event, "prompt_tokens", None):
@@ -815,13 +959,18 @@ Respond ONLY with the category name in lowercase (schema, admin, or chat)."""
             runner = Runner(agent=agent, app_name="vento", session_service=global_session_service)
             session_id = f"session_{agent_id}"
             
+            from adk_agents import current_session_id, current_source_channel
+            current_session_id.set(session_id)
+            current_source_channel.set("internal_ui")
+            
             session = await global_session_service.get_session(app_name="vento", user_id="default", session_id=session_id)
             if session is None:
                 await global_session_service.create_session(app_name="vento", user_id="default", session_id=session_id)
             
             await log_and_store_interaction(agent_id, session_id, "user", "message", message or "Hello", metadata={"channel": "internal_ui"})
             
-            msg = types.Content(role="user", parts=[types.Part.from_text(text=message or "Hello")])
+            context_prefix = f"[Context: source_channel='internal_ui', session_id='{session_id}', agent_id='{agent_id}']\n"
+            msg = types.Content(role="user", parts=[types.Part.from_text(text=context_prefix + (message or "Hello"))])
             metadata = {"channel": "internal_ui", "tokens": 0, "reasoning": "", "tool_calls": [], "tool_outputs": []}
             async for event in runner.run_async(user_id="default", session_id=session_id, new_message=msg):
                 if getattr(event, "prompt_tokens", None):
@@ -1047,6 +1196,143 @@ async def oc_dynamic_tool(agent_id: str, tool_name: str, request: Request):
         return {"status": "success", "result": res}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+class SuggestConnectionsPayload(BaseModel):
+    label: str
+    properties: dict
+    context: str | None = None
+
+@app.post("/ontology/suggest_connections")
+def suggest_connections(payload: SuggestConnectionsPayload, agent_id: str = "global"):
+    if not client:
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+        
+    schema = ontology_manager.get_schema(agent_id)
+    import json
+    schema_str = f"\nOntology Schema:\n{json.dumps(schema, indent=2)}\n" if schema else ""
+    context_str = f"\nRelevant Context / Known Facts:\n{payload.context}\n" if payload.context else ""
+        
+    prompt = f"""You are a Graph Database Schema Assistant. 
+The user is editing a node/entity with the label/type: '{payload.label}'
+{schema_str}
+The current properties of this entity are:
+{payload.properties}{context_str}
+
+Suggest 3 to 5 new relevant connections (relationships) that would be useful to add to this entity.
+Crucially, look at the Ontology Schema predicates and suggest likely missing edges based on standard graph practices for this domain.
+For each suggested connection, provide:
+- "target_label": The expected label of the target node (e.g., 'User').
+- "predicate": The relationship type (e.g., 'REPORTED_BY').
+- "reason": A short explanation of why this connection makes sense.
+
+Return ONLY a JSON array of objects in this exact format:
+[
+  {{"target_label": "User", "predicate": "ASSIGNED_TO", "reason": "Tickets usually have an assignee."}},
+  {{"target_label": "Project", "predicate": "PART_OF", "reason": "Tickets are often part of a project."}}
+]
+Do not include any markdown formatting like ```json.
+"""
+    try:
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-lite',
+            contents=prompt
+        )
+        
+        import json
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+        
+        suggestions = json.loads(text.strip())
+        return {"status": "success", "suggestions": suggestions}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+class ActionTemplateGeneratePayload(BaseModel):
+    node_data: dict
+    context: str | None = None
+    intent: str | None = None
+
+@app.post("/agent/{agent_id}/action_template/generate_from_context")
+def generate_action_template(agent_id: str, payload: ActionTemplateGeneratePayload):
+    if not client:
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+        
+    import json
+    context_str = f"\nRelevant Context / Subgraph:\n{payload.context}\n" if payload.context else ""
+    intent_str = f"\nUser Intent:\n{payload.intent}\n" if payload.intent else ""
+        
+    prompt = f"""You are an AI assistant helping a user operationalize a subgraph pattern into a reusable Action Template (dynamic tool).
+The user selected a node and its context.
+Target Node Data:
+{json.dumps(payload.node_data, indent=2)}
+{context_str}{intent_str}
+
+Generate a reusable Action Template (dynamic tool) for the agent.
+An Action Template allows an agent to run parameterized Cypher queries.
+
+Generate a JSON object with the following fields:
+- "tool_name": A unique string name for the tool (e.g., "create_incident_ticket").
+- "description": A clear description for the LLM of what this tool does.
+- "parameters": A dictionary mapping parameter names to their descriptions (for the LLM). Use `__id` and `__timestamp` in the query to auto-generate unique IDs and current timestamps without needing to require them as parameters from the LLM.
+- "cypher_query": The raw Cypher query to execute on FalkorDB. Parameters must be referenced as `$paramName`. Example: `CREATE (t:Ticket {{id: $__id, title: $title, status: 'open', created_at: $__timestamp}})`
+- "success_message": A message to return to the agent upon successful execution.
+
+Return ONLY the JSON object, without any markdown formatting like ```json.
+"""
+    try:
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-lite',
+            contents=prompt
+        )
+        
+        import json
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+        
+        # Parse it, then we'll map "cypher_query" to "query" to match adk_agents expectations.
+        config = json.loads(text.strip())
+        if "cypher_query" in config and "query" not in config:
+            config["query"] = config.pop("cypher_query")
+            
+        return {"status": "success", "action_template": config}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+class ActionTemplateSavePayload(BaseModel):
+    action_template: dict
+
+@app.post("/agents/{agent_id}/action_templates")
+def save_action_template(agent_id: str, payload: ActionTemplateSavePayload):
+    from adk_agents import load_agents_config, save_agents_config
+    config = load_agents_config()
+    if agent_id not in config:
+        return {"status": "error", "message": "Agent not found"}
+        
+    action_templates = config[agent_id].get("action_templates", [])
+    
+    # check if template with same name exists, if so update it
+    existing = next((t for t in action_templates if t["tool_name"] == payload.action_template["tool_name"]), None)
+    if existing:
+        existing.update(payload.action_template)
+    else:
+        action_templates.append(payload.action_template)
+        
+    config[agent_id]["action_templates"] = action_templates
+    save_agents_config(config)
+    
+    # Force agent re-initialization if caching is used (in this app, `get_agent` reads from config)
+    # the next call to get_agent will pick it up
+    return {"status": "success", "message": "Action template saved successfully"}
 
 # --- Custom Reports Endpoints ---
 

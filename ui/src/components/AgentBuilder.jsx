@@ -5,8 +5,12 @@ const API_BASE = 'http://localhost:8000';
 
 const AgentBuilder = ({ onClose, onSave }) => {
   const [step, setStep] = useState('onboarding'); // 'onboarding' | 'builder'
+  const [wizardStep, setWizardStep] = useState(1); // 1 = initial, 2 = refinement
   const [wizardGoal, setWizardGoal] = useState('');
-  const [wizardQuestions, setWizardQuestions] = useState('');
+  const [wizardDomain, setWizardDomain] = useState('General');
+  const [wizardComplexity, setWizardComplexity] = useState('Basic');
+  const [wizardQuestionsList, setWizardQuestionsList] = useState([]);
+  const [wizardAnswers, setWizardAnswers] = useState({});
   
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -114,58 +118,57 @@ const AgentBuilder = ({ onClose, onSave }) => {
     }
   };
 
-  const handleGenerateSkeleton = async () => {
+  const handleWizardRefine = async (isRefinementPhase = false) => {
     if (!wizardGoal.trim()) {
       setError('Please provide a main goal for the agent.');
       return;
     }
     setGenerating(true);
     setError('');
-    
-    const skeletonPrompt = `Create an agent with the following primary goal: ${wizardGoal}. 
-It should be able to answer these key questions: ${wizardQuestions}.
-Provide a comprehensive instruction and a rich ontology schema tailored for this specific use case.`;
+
+    const payload = {
+      goal: wizardGoal,
+      domain: wizardDomain,
+      complexity: wizardComplexity,
+      current_ontology: isRefinementPhase && ontology ? JSON.parse(ontology) : null,
+      answers: isRefinementPhase ? wizardAnswers : {}
+    };
 
     try {
-      const response = await fetch(`${API_BASE}/agents/generate`, {
+      const response = await fetch(`${API_BASE}/agents/wizard/refine`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          description: skeletonPrompt,
-          current_config: null
-        })
+        body: JSON.stringify(payload)
       });
       
       const data = await response.json();
-      if (data.status === 'success' && data.config) {
-        setChatHistory([
-          { role: 'user', content: `Goal: ${wizardGoal}\nQuestions: ${wizardQuestions}` },
-          { role: 'assistant', content: 'Initial skeleton generated successfully! You can refine it here.' }
+      if (data.status === 'success' && data.skeleton_preview) {
+        setChatHistory(prev => [
+          ...prev,
+          { role: 'user', content: isRefinementPhase ? 'Submitting refined answers...' : `Goal: ${wizardGoal} | Domain: ${wizardDomain}` },
+          { role: 'assistant', content: 'Agent skeleton updated based on your inputs.' }
         ]);
-        setAgentId(data.config.agent_id || '');
-        setName(data.config.name || '');
-        setInstruction(data.config.instruction || '');
-        setSelectedTools(data.config.tools || []);
-        setActionTemplates(data.config.action_templates || []);
-        if (data.config.ontology) {
-          setOntology(JSON.stringify(data.config.ontology, null, 2));
-        } else {
-          setOntology('');
+        
+        const conf = data.skeleton_preview;
+        if (conf.agent_id) setAgentId(conf.agent_id);
+        if (conf.name) setName(conf.name);
+        if (conf.instruction) setInstruction(conf.instruction);
+        
+        if (data.initial_ontology) {
+          setOntology(JSON.stringify(data.initial_ontology, null, 2));
         }
-        if (data.config.channels) {
-          setChannels({
-            discord: { enabled: !!data.config.channels.discord, bot_token: data.config.channels.discord?.bot_token || '' },
-            slack: { enabled: !!data.config.channels.slack, bot_token: data.config.channels.slack?.bot_token || '' },
-            whatsapp: { enabled: !!data.config.channels.whatsapp, api_token: data.config.channels.whatsapp?.api_token || '' }
-          });
+
+        if (data.follow_up_questions) {
+          setWizardQuestionsList(data.follow_up_questions);
         }
-        setStep('builder');
+        
+        setWizardStep(2);
       } else {
-        setError(data.message || 'Failed to generate skeleton.');
+        setError(data.message || 'Failed to refine agent.');
       }
     } catch (err) {
       console.error(err);
-      setError('Network error occurred during generation.');
+      setError('Network error occurred during wizard refinement.');
     } finally {
       setGenerating(false);
     }
@@ -306,12 +309,12 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
         </div>
         
         {step === 'onboarding' ? (
-          <div className="modal-body flex-col flex-center" style={{ textAlign: 'center', padding: '3rem' }}>
+          <div className="modal-body flex-col flex-center" style={{ textAlign: 'center', padding: '3rem', overflowY: 'auto' }}>
             <div style={{ maxWidth: '600px', width: '100%', margin: '0 auto' }}>
               <div style={{ marginBottom: '2.5rem' }}>
                 <Sparkles size={48} className="text-primary" style={{ margin: '0 auto 1.5rem', opacity: 0.9 }} />
                 <h2 className="text-h2 text-main" style={{ marginBottom: '0.75rem' }}>Let's sketch your new Agent!</h2>
-                <p className="text-muted text-body">Tell me a bit about what this agent should do, and I'll generate a complete skeleton (including instructions and a knowledge graph ontology) for you to refine.</p>
+                <p className="text-muted text-body">I'll guide you through setting up an agent's brain, instructions, and memory structure. We'll start simple and refine it iteratively.</p>
               </div>
 
               {error && (
@@ -320,50 +323,124 @@ Provide a comprehensive instruction and a rich ontology schema tailored for this
                 </div>
               )}
 
-              <div className="flex-col" style={{ gap: '1.5rem', textAlign: 'left' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label text-main">
-                    1. What is the primary goal of this agent?
-                  </label>
-                  <textarea
-                    className="input-field"
-                    style={{ minHeight: '100px', resize: 'vertical' }}
-                    placeholder="e.g., A legal assistant that analyzes contracts and finds loopholes..."
-                    value={wizardGoal}
-                    onChange={(e) => setWizardGoal(e.target.value)}
-                  />
-                </div>
+              {wizardStep === 1 && (
+                <div className="flex-col" style={{ gap: '1.5rem', textAlign: 'left' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label text-main">
+                      1. What is the primary goal of this agent?
+                    </label>
+                    <textarea
+                      className="input-field"
+                      style={{ minHeight: '100px', resize: 'vertical' }}
+                      placeholder="e.g., A legal assistant that analyzes contracts and finds loopholes..."
+                      value={wizardGoal}
+                      onChange={(e) => setWizardGoal(e.target.value)}
+                    />
+                  </div>
 
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label text-main">
-                    2. What are some key questions this agent should be able to answer? (Optional)
-                  </label>
-                  <textarea
-                    className="input-field"
-                    style={{ minHeight: '100px', resize: 'vertical' }}
-                    placeholder="e.g., What are the penalties for breach of contract? Who are the signing parties?"
-                    value={wizardQuestions}
-                    onChange={(e) => setWizardQuestions(e.target.value)}
-                  />
-                </div>
+                  <div className="flex-row" style={{ gap: '1rem' }}>
+                    <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                      <label className="form-label text-main">Domain</label>
+                      <select 
+                        className="input-field"
+                        value={wizardDomain}
+                        onChange={(e) => setWizardDomain(e.target.value)}
+                      >
+                        <option value="General">General</option>
+                        <option value="Legal">Legal</option>
+                        <option value="Healthcare">Healthcare</option>
+                        <option value="Tech/Dev">Tech & Development</option>
+                        <option value="Finance">Finance</option>
+                        <option value="Ops/Logistics">Operations & Logistics</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
 
-                <div className="flex-row" style={{ paddingTop: '1.5rem', justifyContent: 'flex-end' }}>
-                  <button 
-                    onClick={() => setStep('builder')}
-                    className="btn btn-ghost"
-                  >
-                    Skip to Manual Builder
-                  </button>
-                  <button 
-                    onClick={handleGenerateSkeleton}
-                    disabled={generating || !wizardGoal.trim()}
-                    className="btn btn-primary"
-                  >
-                    {generating ? 'Generating Skeleton...' : 'Generate Skeleton'}
-                    <Sparkles size={16} />
-                  </button>
+                    <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                      <label className="form-label text-main">Complexity</label>
+                      <select 
+                        className="input-field"
+                        value={wizardComplexity}
+                        onChange={(e) => setWizardComplexity(e.target.value)}
+                      >
+                        <option value="Basic">Basic (Simple QA)</option>
+                        <option value="Intermediate">Intermediate (Task-driven)</option>
+                        <option value="Advanced">Advanced (Complex Memory Graph)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex-row" style={{ paddingTop: '1.5rem', justifyContent: 'flex-end', gap: '1rem' }}>
+                    <button 
+                      onClick={() => setStep('builder')}
+                      className="btn btn-ghost"
+                    >
+                      Skip to Manual Builder
+                    </button>
+                    <button 
+                      onClick={() => handleWizardRefine(false)}
+                      disabled={generating || !wizardGoal.trim()}
+                      className="btn btn-primary"
+                    >
+                      {generating ? 'Analyzing...' : 'Start Refinement'}
+                      <Sparkles size={16} />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {wizardStep === 2 && (
+                <div className="flex-col" style={{ gap: '1.5rem', textAlign: 'left' }}>
+                  <div className="glass-panel" style={{ padding: '1.5rem', border: '1px solid var(--primary-color)' }}>
+                    <h4 style={{ color: 'var(--primary-light)', marginBottom: '0.5rem', fontSize: '1.1rem' }}>Agent Skeleton Created</h4>
+                    <p style={{ color: 'var(--text-main)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                      I've generated an initial instruction set and knowledge graph ontology based on your goal. To tailor it further, please answer these follow-up questions:
+                    </p>
+
+                    <div className="flex-col" style={{ gap: '1rem' }}>
+                      {wizardQuestionsList.map((q, idx) => (
+                        <div key={idx} className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="form-label" style={{ color: 'var(--text-main)' }}>{idx + 1}. {q}</label>
+                          <textarea
+                            className="input-field"
+                            style={{ minHeight: '60px', resize: 'vertical' }}
+                            placeholder="Your answer..."
+                            value={wizardAnswers[q] || ''}
+                            onChange={(e) => setWizardAnswers({ ...wizardAnswers, [q]: e.target.value })}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex-row" style={{ paddingTop: '1rem', justifyContent: 'flex-end', gap: '1rem' }}>
+                    <button 
+                      onClick={() => setWizardStep(1)}
+                      className="btn btn-ghost"
+                      disabled={generating}
+                    >
+                      Back
+                    </button>
+                    <button 
+                      onClick={() => handleWizardRefine(true)}
+                      disabled={generating}
+                      className="btn btn-ghost"
+                      style={{ border: '1px solid var(--primary-color)', color: 'var(--primary-light)' }}
+                    >
+                      {generating ? 'Refining...' : 'Refine Again'}
+                      <Activity size={16} />
+                    </button>
+                    <button 
+                      onClick={() => setStep('builder')}
+                      className="btn btn-primary"
+                      disabled={generating}
+                    >
+                      Accept & Finalize
+                      <Sparkles size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ) : (
